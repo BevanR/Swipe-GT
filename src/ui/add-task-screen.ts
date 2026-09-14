@@ -14,6 +14,7 @@ export interface AddTaskInput {
   taskListId: string;
   title: string;
   due?: string;
+  notes?: string;
 }
 
 /**
@@ -170,6 +171,7 @@ export class AddTaskScreen extends LitElement {
   @property({ attribute: false }) onSubmit?: (input: AddTaskInput) => Promise<void>;
 
   @state() private taskTitle = '';
+  @state() private notes = '';
   /** The selected Due option key ('none' by default). */
   @state() private dueKey = 'none';
   /** The date chosen via the "Pick a date" inline input. */
@@ -186,6 +188,7 @@ export class AddTaskScreen extends LitElement {
     super.connectedCallback();
     // A fresh mount is a fresh form; recompute due options relative to now.
     this.taskTitle = '';
+    this.notes = '';
     this.dueKey = 'none';
     this.pickedDate = '';
     this.submitting = false;
@@ -274,7 +277,13 @@ export class AddTaskScreen extends LitElement {
     if (!title || this.submitting || !target || !this.onSubmit) return;
     this.submitting = true;
     try {
-      await this.onSubmit({ taskListId: target.taskListId, title, ...(target.due ? { due: target.due } : {}) });
+      const notes = this.notes.trim();
+      await this.onSubmit({
+        taskListId: target.taskListId,
+        title,
+        ...(target.due ? { due: target.due } : {}),
+        ...(notes ? { notes: this.notes } : {}),
+      });
       navigate('list');
     } catch {
       // Stay on the screen; the controller already surfaced an error toast.
@@ -291,6 +300,21 @@ export class AddTaskScreen extends LitElement {
     if (e.key === 'Escape') {
       e.stopPropagation();
       this.cancel();
+    }
+  }
+
+  /**
+   * Enter in the single-line TITLE field submits the form. The mobile keyboard's
+   * primary action (labelled "Done" via enterkeyhint) fires Enter here; because
+   * the field lives in shadow DOM the browser's implicit form submission does not
+   * always cross the boundary, so we submit explicitly. (Notes is a textarea, so
+   * Enter there inserts a newline as normal — this handler is bound to the title
+   * field only.)
+   */
+  private onTitleKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (this.canSubmit()) void this.submit();
     }
   }
 
@@ -318,8 +342,18 @@ export class AddTaskScreen extends LitElement {
           <md-outlined-text-field
             label="Title"
             required
+            enterkeyhint="done"
             .value=${this.taskTitle}
             @input=${(e: Event) => (this.taskTitle = (e.target as MdOutlinedTextField).value)}
+            @keydown=${(e: KeyboardEvent) => this.onTitleKeydown(e)}
+          ></md-outlined-text-field>
+
+          <md-outlined-text-field
+            label="Notes"
+            type="textarea"
+            rows="3"
+            .value=${this.notes}
+            @input=${(e: Event) => (this.notes = (e.target as MdOutlinedTextField).value)}
           ></md-outlined-text-field>
 
           <div>

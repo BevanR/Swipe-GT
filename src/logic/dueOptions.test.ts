@@ -4,6 +4,7 @@ import {
   buildDueOptions,
   normalizePickedDate,
   resolveAddTarget,
+  resolveEditChanges,
   selectDueOption,
 } from './dueOptions';
 import { computeSnoozeOptions } from './snooze';
@@ -191,6 +192,106 @@ describe('selectDueOption', () => {
       key: 'pick',
       pickedDate: '2027-03-04',
     });
+  });
+
+  // Edit screen: no due maps to "Someday" or "Now (no date)" depending on list.
+  it('selects "someday" when undated and the task is in the Someday list', () => {
+    const opts = buildAddDueOptions(today, { hasSomeday: true });
+    expect(selectDueOption(null, opts, { inSomeday: true })).toEqual({
+      key: 'someday',
+      pickedDate: '',
+    });
+    expect(selectDueOption(undefined, opts, { inSomeday: true })).toEqual({
+      key: 'someday',
+      pickedDate: '',
+    });
+  });
+
+  it('selects "none" when undated and the task is NOT in the Someday list', () => {
+    const opts = buildAddDueOptions(today, { hasSomeday: true });
+    expect(selectDueOption(null, opts, { inSomeday: false })).toEqual({
+      key: 'none',
+      pickedDate: '',
+    });
+  });
+});
+
+describe('resolveEditChanges', () => {
+  const today = new Date(2026, 8, 16); // Wed 2026-09-16
+  const options = buildAddDueOptions(today, { hasSomeday: true });
+  const base = { defaultListId: 'default-list', somedayListId: 'someday-list' };
+
+  it('someday → clears the date and moves to the Someday list', () => {
+    expect(
+      resolveEditChanges({
+        dueKey: 'someday',
+        pickedDate: '',
+        options,
+        wasInSomeday: false,
+        ...base,
+      }),
+    ).toEqual({ due: null, listId: 'someday-list' });
+  });
+
+  it('now (none) while in Someday → clears the date and ejects to the default list', () => {
+    expect(
+      resolveEditChanges({
+        dueKey: 'none',
+        pickedDate: '',
+        options,
+        wasInSomeday: true,
+        ...base,
+      }),
+    ).toEqual({ due: null, listId: 'default-list' });
+  });
+
+  it('now (none) while NOT in Someday → clears the date, no list move', () => {
+    expect(
+      resolveEditChanges({
+        dueKey: 'none',
+        pickedDate: '',
+        options,
+        wasInSomeday: false,
+        ...base,
+      }),
+    ).toEqual({ due: null });
+  });
+
+  it('a dated option → that date, no list move', () => {
+    const tomorrow = options.find((o) => o.key === 'tomorrow')!;
+    expect(
+      resolveEditChanges({
+        dueKey: 'tomorrow',
+        pickedDate: '',
+        options,
+        wasInSomeday: false,
+        ...base,
+      }),
+    ).toEqual({ due: tomorrow.date });
+  });
+
+  it('pick with a chosen date → that date, no list move', () => {
+    expect(
+      resolveEditChanges({
+        dueKey: 'pick',
+        pickedDate: '2027-03-04',
+        options,
+        wasInSomeday: false,
+        ...base,
+      }),
+    ).toEqual({ due: '2027-03-04' });
+  });
+
+  it('pick with no date yet → clears the date (null), no list move', () => {
+    expect(
+      resolveEditChanges({
+        dueKey: 'pick',
+        pickedDate: '',
+        options,
+        wasInSomeday: false,
+        ...base,
+      }),
+    ).toEqual({ due: null });
   });
 });
 

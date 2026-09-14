@@ -38,19 +38,22 @@ function makeApi(initial: Task[]): ApiLike & { store: Task[] } {
     store,
     listTaskLists: vi.fn(async () => [{ id: 'l1', title: 'My Tasks' }]),
     listTasks: vi.fn(async () => store.map((t) => ({ ...t }))),
-    insert: vi.fn(async (listId: string, input: { title: string; due?: string }) => {
-      const created: Task = {
-        id: `new-${store.length + 1}`,
-        taskListId: listId,
-        taskListTitle: 'My Tasks',
-        title: input.title,
-        due: input.due ?? null,
-        status: 'needsAction',
-        position: '',
-      };
-      store.push(created);
-      return { ...created };
-    }),
+    insert: vi.fn(
+      async (listId: string, input: { title: string; due?: string; notes?: string }) => {
+        const created: Task = {
+          id: `new-${store.length + 1}`,
+          taskListId: listId,
+          taskListTitle: 'My Tasks',
+          title: input.title,
+          due: input.due ?? null,
+          ...(input.notes != null ? { notes: input.notes } : {}),
+          status: 'needsAction',
+          position: '',
+        };
+        store.push(created);
+        return { ...created };
+      },
+    ),
     complete: vi.fn(async (_l: string, id: string) => {
       const i = store.findIndex((t) => t.id === id);
       if (i >= 0) store.splice(i, 1);
@@ -232,6 +235,29 @@ describe('AppController.addTask', () => {
 
     expect(api.insert).toHaveBeenCalledWith('l1', { title: 'Offsite', due: localDate(30) });
     expect(ctrl.state.allTasks.map((t) => t.title)).toContain('Offsite');
+  });
+
+  it('passes notes through to insert', async () => {
+    const api = makeApi([]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+
+    await ctrl.addTask({ taskListId: 'l1', title: 'Call bank', notes: 'ask about fees' });
+
+    expect(api.insert).toHaveBeenCalledWith('l1', {
+      title: 'Call bank',
+      notes: 'ask about fees',
+    });
+  });
+
+  it('omits notes when empty or blank', async () => {
+    const api = makeApi([]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+
+    await ctrl.addTask({ taskListId: 'l1', title: 'No notes', notes: '   ' });
+
+    expect(api.insert).toHaveBeenCalledWith('l1', { title: 'No notes' });
   });
 
   it('surfaces an error and does not enqueue when offline', async () => {

@@ -429,7 +429,12 @@ export class AppController extends EventTarget {
    * enqueue. Rejects on failure so the caller (dialog) can stay open; a toast
    * is shown for surfaced errors.
    */
-  async addTask(input: { taskListId: string; title: string; due?: string }): Promise<void> {
+  async addTask(input: {
+    taskListId: string;
+    title: string;
+    due?: string;
+    notes?: string;
+  }): Promise<void> {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       // Offline add is out of scope: do NOT enqueue; just tell the user.
       this.showToast("Can't add a task while offline.");
@@ -439,6 +444,8 @@ export class AppController extends EventTarget {
       await this.api.insert(input.taskListId, {
         title: input.title,
         ...(input.due != null ? { due: input.due } : {}),
+        // Only send notes when the user actually typed some (skip empty/blank).
+        ...(input.notes != null && input.notes.trim() !== '' ? { notes: input.notes } : {}),
       });
       await this.refresh();
     } catch (err) {

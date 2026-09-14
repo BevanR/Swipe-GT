@@ -138,12 +138,16 @@ export interface DueSelection {
 }
 
 /**
- * Map an existing task due date onto the Edit screen's pre-selected Due chip.
+ * Map an existing task due date (and its list membership) onto the Edit screen's
+ * pre-selected Due option.
  *
- * Rules (mirrors the Add screen's chip semantics):
- *  - no due (null/undefined) → the `none` ("No date") chip.
- *  - a due equal to one of the computed option dates → that option's chip.
- *  - any other date → the `pick` ("Pick a date") chip, with the date prefilled.
+ * Rules (mirrors the Add screen's dropdown semantics):
+ *  - no due (null/undefined) AND the task is in the Someday list → the `someday`
+ *    option (only meaningful when the options include it).
+ *  - no due (null/undefined) and NOT in Someday → the `none` ("Now (no date)")
+ *    option.
+ *  - a due equal to one of the computed option dates → that option.
+ *  - any other date → the `pick` ("Pick a date") option, with the date prefilled.
  *
  * The due is compared on its date-only prefix so a stored RFC3339 datetime and a
  * plain 'YYYY-MM-DD' both resolve. Pure and DOM-free so it can be unit-tested.
@@ -151,10 +155,52 @@ export interface DueSelection {
 export function selectDueOption(
   due: string | null | undefined,
   options: DueOption[],
+  opts?: { inSomeday?: boolean },
 ): DueSelection {
-  if (!due) return { key: 'none', pickedDate: '' };
+  if (!due) return { key: opts?.inSomeday ? 'someday' : 'none', pickedDate: '' };
   const dateOnly = due.slice(0, 10);
   const match = options.find((o) => o.date !== null && o.date === dateOnly);
   if (match) return { key: match.key, pickedDate: '' };
   return { key: 'pick', pickedDate: dateOnly };
+}
+
+/** The due (and optional list move) an Edit-screen Due option resolves to. */
+export interface EditDueChanges {
+  /** The new due: a 'YYYY-MM-DD' string, or null to CLEAR the date. */
+  due: string | null;
+  /** The destination list id when the option implies a list move; else omitted. */
+  listId?: string;
+}
+
+/**
+ * Resolve the Edit screen's current Due selection into the due (and any list
+ * move) that should be applied. Pure and DOM-free so it can be unit-tested;
+ * always returns a `due` (the caller diffs it against the task's current state).
+ *
+ * Rules:
+ *  - `someday` → clear the date and move to the Someday list.
+ *  - `none` ("Now (no date)") → clear the date; additionally eject to the default
+ *    list, but ONLY when the task is currently in the Someday list.
+ *  - `pick` → the chosen date (or null when none has been chosen yet); list
+ *    unchanged.
+ *  - a dated option → that option's date; list unchanged.
+ */
+export function resolveEditChanges(args: {
+  dueKey: string;
+  pickedDate: string;
+  options: DueOption[];
+  wasInSomeday: boolean;
+  defaultListId: string;
+  somedayListId: string | null;
+}): EditDueChanges {
+  const { dueKey, pickedDate, options, wasInSomeday, defaultListId, somedayListId } = args;
+  if (dueKey === 'someday') {
+    return somedayListId ? { due: null, listId: somedayListId } : { due: null };
+  }
+  if (dueKey === 'none') {
+    return wasInSomeday ? { due: null, listId: defaultListId } : { due: null };
+  }
+  if (dueKey === 'pick') return { due: pickedDate || null };
+  const opt = options.find((o) => o.key === dueKey);
+  return { due: opt?.date ?? null };
 }

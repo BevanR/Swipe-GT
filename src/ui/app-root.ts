@@ -377,8 +377,12 @@ export class AppRoot extends LitElement {
           return html`<add-task-screen
             .defaultListId=${s.lists[0]?.id ?? ''}
             .somedayListId=${s.somedayListId}
-            .onSubmit=${(input: { taskListId: string; title: string; due?: string }) =>
-              this.controller.addTask(input)}
+            .onSubmit=${(input: {
+              taskListId: string;
+              title: string;
+              due?: string;
+              notes?: string;
+            }) => this.controller.addTask(input)}
           ></add-task-screen>`;
         }
         if (this.route.name === 'edit') {
@@ -388,6 +392,7 @@ export class AppRoot extends LitElement {
             return html`<edit-task-screen
               .task=${task}
               .lists=${s.lists}
+              .somedayListId=${s.somedayListId}
               .onSave=${(changes: TaskUpdateChanges) =>
                 this.controller.updateTask(task, changes)}
             ></edit-task-screen>`;
