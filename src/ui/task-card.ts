@@ -220,10 +220,24 @@ export class TaskCard extends LitElement {
   private get isOverdue(): boolean {
     const due = this.task?.due;
     if (!due) return false;
+    return due.slice(0, 10) < this.todayStr();
+  }
+
+  /**
+   * True only when the task has a due date that equals today (local calendar).
+   * Null-due, future, and overdue tasks are all NOT due today.
+   */
+  private get isDueToday(): boolean {
+    const due = this.task?.due;
+    if (!due) return false;
+    return due.slice(0, 10) === this.todayStr();
+  }
+
+  /** Today's local calendar date as 'YYYY-MM-DD'. */
+  private todayStr(): string {
     const now = new Date();
     const p = (n: number) => String(n).padStart(2, '0');
-    const todayStr = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
-    return due.slice(0, 10) < todayStr;
+    return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
   }
 
   private width(): number {
@@ -356,7 +370,7 @@ export class TaskCard extends LitElement {
   private openSnooze(): void {
     // Spring the card back to rest, then raise the menu.
     this.offset = 0;
-    this.snoozeOptions = computeSnoozeOptions(new Date(), { overdue: this.isOverdue });
+    this.snoozeOptions = computeSnoozeOptions(new Date(), { includeToday: !this.isDueToday });
     this.snoozeOpen = true;
   }
 

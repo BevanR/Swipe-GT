@@ -10,6 +10,16 @@
   color-scheme: light;
   --app-max-width: 640px;
 
+  /* Material Web reference typeface tokens. Material defaults these to "Roboto",
+     which this offline-safe PWA never downloads, so its components (dialog,
+     list items, buttons, text fields, selects) fall back to the browser serif.
+     Point them at a system-first sans stack; custom properties pierce the shadow
+     boundary, so every Material component inherits it. No network dependency. */
+  --md-ref-typeface-plain: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+  --md-ref-typeface-brand: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+
   /* App-level tokens (defaults = tasks light, the preferred theme, applied
      before boot sets data-theme so there's no flash). */
   --app-bg: #ffffff;
@@ -46,7 +56,7 @@
   --app-warning: #b45309;
   --app-warning-accent: #ef6c00;
   --app-checkbox-border: #1a73e8;
-  --app-font: 'Roboto', system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+  --app-font: system-ui, -apple-system, 'Segoe UI', 'Roboto', Helvetica, Arial, sans-serif;
   --app-list-gap: 0px;
   --app-group-gap: 14px;
 }

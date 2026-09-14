@@ -20,13 +20,15 @@ import type { SnoozeOption } from '../types';
  * and month/year rollovers are handled correctly (never via UTC arithmetic).
  *
  * @param today Reference "today"; defaults to `new Date()`.
- * @param opts  Task context. When `opts.overdue` is true, a `today` option
- *              ("postpone to today") is prepended — only meaningful for tasks
- *              whose due date is strictly before today.
+ * @param opts  Task context. When `opts.includeToday` is true, a `today` option
+ *              (pull the task onto today) is prepended. Callers set this whenever
+ *              the task is NOT already due exactly today — i.e. for overdue,
+ *              future, and no-date tasks — and leave it false only when the due
+ *              date already IS today (where "Today" would be a no-op).
  */
 export function computeSnoozeOptions(
   today: Date = new Date(),
-  opts?: { overdue?: boolean },
+  opts?: { includeToday?: boolean },
 ): SnoozeOption[] {
   // Local calendar anchor at local midnight; `getDay()` gives 0=Sun..6=Sat.
   const year = today.getFullYear();
@@ -36,8 +38,9 @@ export function computeSnoozeOptions(
 
   const options: SnoozeOption[] = [];
 
-  // 0. Today — only for overdue tasks (postpone the task forward to today).
-  if (opts?.overdue) {
+  // 0. Today — shown whenever the task isn't already due exactly today (pull an
+  //    overdue, future, or no-date task onto today).
+  if (opts?.includeToday) {
     options.push({
       key: 'today',
       label: 'Today',
