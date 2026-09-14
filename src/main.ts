@@ -1,13 +1,23 @@
+import './styles/theme.css';
 import { registerServiceWorker } from './pwa/register';
+import { AppController } from './app/controller';
+import { AppRoot } from './ui/app-root';
 
-// Foundation placeholder UI. Feature agents replace this with the real app.
-function render(): void {
-  const app = document.querySelector<HTMLDivElement>('#app');
-  if (!app) return;
-  const heading = document.createElement('h1');
-  heading.textContent = 'Google Tasks Swipe';
-  app.appendChild(heading);
+/**
+ * App bootstrap: mount the shell, hand it a controller, and start the boot
+ * flow (theme → auth check → connect-or-load). Then register the service worker.
+ */
+function main(): void {
+  const mount = document.querySelector<HTMLDivElement>('#app');
+  if (!mount) return;
+
+  const controller = new AppController();
+  const root = new AppRoot();
+  root.controller = controller;
+  mount.replaceChildren(root);
+
+  void controller.boot();
+  registerServiceWorker();
 }
 
-render();
-registerServiceWorker();
+main();
