@@ -1,8 +1,10 @@
 import { LitElement, css, html, nothing } from 'lit';
-import { customElement, property, query } from 'lit/decorators.js';
+import { customElement, property, query, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import type { GroupedTasks, Task, TaskList, ViewName } from '../types';
 import { groupScheduled } from '../logic/scheduledGroups.js';
+import { partitionSearch } from '../logic/search.js';
+import type { SearchSections } from '../logic/search.js';
 import './task-card.js';
 import './add-task-dialog.js';
 import type { AddTaskDialog, AddTaskInput } from './add-task-dialog.js';
@@ -137,6 +139,41 @@ export class TaskListView extends LitElement {
       outline: 2px solid var(--app-accent);
       outline-offset: -2px;
     }
+    .iconbtn[aria-pressed='true'] {
+      background: color-mix(in srgb, var(--app-accent) 14%, transparent);
+      color: var(--app-accent);
+    }
+    .searchbar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 12px 10px;
+    }
+    .searchbar input {
+      flex: 1;
+      min-width: 0;
+      appearance: none;
+      border: 1px solid var(--app-border);
+      background: var(--app-surface);
+      color: var(--app-on-surface);
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 0.9rem;
+      font-family: inherit;
+    }
+    .searchbar input::placeholder {
+      color: var(--app-on-surface-muted);
+    }
+    .searchbar input:focus-visible {
+      outline: 2px solid var(--app-accent);
+      outline-offset: -1px;
+      border-color: transparent;
+    }
+    .nomatch {
+      padding: 8px 16px 16px;
+      color: var(--app-on-surface-muted);
+      font-size: 0.9rem;
+    }
     .banner {
       display: flex;
       align-items: center;
@@ -234,9 +271,41 @@ export class TaskListView extends LitElement {
   @property({ attribute: false }) addTask?: (input: AddTaskInput) => Promise<void>;
 
   @query('add-task-dialog') private addDialog?: AddTaskDialog;
+  @query('#searchinput') private searchInput?: HTMLInputElement;
+
+  /** Whether the header search field is expanded. */
+  @state() private searchOpen = false;
+  /** The transient (never persisted) search query. */
+  @state() private searchQuery = '';
 
   private openAddDialog(): void {
     this.addDialog?.show();
+  }
+
+  private toggleSearch(): void {
+    this.searchOpen = !this.searchOpen;
+    if (this.searchOpen) {
+      void this.updateComplete.then(() => this.searchInput?.focus());
+    } else {
+      this.searchQuery = '';
+    }
+  }
+
+  private onSearchInput(e: Event): void {
+    this.searchQuery = (e.target as HTMLInputElement).value;
+  }
+
+  private onSearchKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      this.searchQuery = '';
+      this.searchOpen = false;
+    }
+  }
+
+  private clearSearch(): void {
+    this.searchQuery = '';
+    void this.updateComplete.then(() => this.searchInput?.focus());
   }
 
   /** Today's LOCAL calendar date as 'YYYY-MM-DD'. */
@@ -292,15 +361,57 @@ export class TaskListView extends LitElement {
     return groupScheduled(this.visibleTasks(), new Date());
   }
 
+  /** The two-section result list shown while a search query is active. */
+  private renderSearchResults(sections: SearchSections) {
+    return html`
+      <div class="list">
+        <h2 class="grouphead">In this view</h2>
+        ${sections.inView.length === 0
+          ? html`<div class="nomatch">No matches in this view</div>`
+          : repeat(
+              sections.inView,
+              (t) => t.id,
+              (t) => html`<task-card .task=${t}></task-card>`,
+            )}
+        ${sections.other.length > 0
+          ? html`
+              <h2 class="grouphead">Other matches</h2>
+              ${repeat(
+                sections.other,
+                (t) => t.id,
+                (t) => html`<task-card .task=${t}></task-card>`,
+              )}
+            `
+          : nothing}
+      </div>
+    `;
+  }
+
   render() {
     const tasks = this.visibleTasks();
     const empty = this.emptyState();
-    const groups = this.view === 'future' ? this.futureGroups() : [];
+    const searching = this.searchQuery.trim() !== '';
+    const groups = !searching && this.view === 'future' ? this.futureGroups() : [];
+    const sections = searching
+      ? partitionSearch(tasks, this.allTasks, this.searchQuery)
+      : null;
     return html`
       <div class="wrap">
         <header>
           <div class="titlebar">
             <h1>Swipe GT</h1>
+            <button
+              class="iconbtn"
+              aria-label="Search"
+              aria-pressed=${this.searchOpen}
+              @click=${() => this.toggleSearch()}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"
+                />
+              </svg>
+            </button>
             <button
               class="iconbtn ${this.loading ? 'spin' : ''}"
               aria-label="Refresh"
@@ -330,6 +441,34 @@ export class TaskListView extends LitElement {
               </svg>
             </button>
           </div>
+          ${this.searchOpen
+            ? html`<div class="searchbar">
+                <input
+                  id="searchinput"
+                  type="search"
+                  inputmode="search"
+                  autocomplete="off"
+                  aria-label="Search tasks"
+                  placeholder="Search tasks…"
+                  .value=${this.searchQuery}
+                  @input=${(e: Event) => this.onSearchInput(e)}
+                  @keydown=${(e: KeyboardEvent) => this.onSearchKeydown(e)}
+                />
+                ${this.searchQuery
+                  ? html`<button
+                      class="iconbtn"
+                      aria-label="Clear search"
+                      @click=${() => this.clearSearch()}
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                        />
+                      </svg>
+                    </button>`
+                  : nothing}
+              </div>`
+            : nothing}
           <div class="viewswitch" role="group" aria-label="View">
             ${VIEWS.map(
               (v) => html`
@@ -356,32 +495,34 @@ export class TaskListView extends LitElement {
           : nothing}
 
         <main>
-          ${tasks.length === 0
-            ? html`<div class="empty">
-                <div class="big" aria-hidden="true">${empty.big}</div>
-                <h2>${empty.heading}</h2>
-                <p>${empty.body}</p>
-              </div>`
-            : this.view === 'future'
-              ? html`<div class="list">
-                  ${groups.map(
-                    (g) => html`
-                      <h2 class="grouphead">${g.label}</h2>
-                      ${repeat(
-                        g.tasks,
-                        (t) => t.id,
-                        (t) => html`<task-card .task=${t}></task-card>`,
-                      )}
-                    `,
-                  )}
+          ${sections
+            ? this.renderSearchResults(sections)
+            : tasks.length === 0
+              ? html`<div class="empty">
+                  <div class="big" aria-hidden="true">${empty.big}</div>
+                  <h2>${empty.heading}</h2>
+                  <p>${empty.body}</p>
                 </div>`
-              : html`<div class="list">
-                  ${repeat(
-                    tasks,
-                    (t) => t.id,
-                    (t) => html`<task-card .task=${t}></task-card>`,
-                  )}
-                </div>`}
+              : this.view === 'future'
+                ? html`<div class="list">
+                    ${groups.map(
+                      (g) => html`
+                        <h2 class="grouphead">${g.label}</h2>
+                        ${repeat(
+                          g.tasks,
+                          (t) => t.id,
+                          (t) => html`<task-card .task=${t}></task-card>`,
+                        )}
+                      `,
+                    )}
+                  </div>`
+                : html`<div class="list">
+                    ${repeat(
+                      tasks,
+                      (t) => t.id,
+                      (t) => html`<task-card .task=${t}></task-card>`,
+                    )}
+                  </div>`}
         </main>
 
         <button class="fab" aria-label="Add task" @click=${() => this.openAddDialog()}>
