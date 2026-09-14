@@ -3,6 +3,17 @@ import { customElement, property, state } from 'lit/decorators.js';
 import type { SnoozeOption, Task } from '../types';
 import { computeSnoozeOptions } from '../logic/snooze';
 import { formatDueLabel } from '../logic/dueLabel';
+
+/**
+ * How a card shows its due date:
+ *  - `'auto'` (default): the friendly relative label from `formatDueLabel`
+ *    (the Now-view behaviour).
+ *  - `'hidden'`: render no due text at all (used in Scheduled buckets whose
+ *    header already states the day).
+ *  - any other string: render that exact string (used for Scheduled range
+ *    buckets, which show an absolute date).
+ */
+export type DueDisplay = 'auto' | 'hidden' | (string & {});
 import { decideSwipe, isHorizontalSwipe, isVerticalScroll } from './swipe';
 import './snooze-menu.js';
 
@@ -216,6 +227,12 @@ export class TaskCard extends LitElement {
   @property({ attribute: false }) task!: Task;
   /** The designated Someday list id (or null); threaded from the controller. */
   @property({ attribute: false }) somedayListId: string | null = null;
+  /**
+   * How to render the due date. Defaults to `'auto'` (the relative label). The
+   * Scheduled view overrides this per bucket: `'hidden'` where the header already
+   * states the day, or an absolute date string for the range buckets.
+   */
+  @property({ attribute: false }) dueDisplay: DueDisplay = 'auto';
 
   @state() private offset = 0;
   @state() private animating = false;
@@ -420,6 +437,8 @@ export class TaskCard extends LitElement {
     this.snoozeOptions = computeSnoozeOptions(new Date(), {
       includeToday: !this.isDueToday,
       includeSomeday: this.somedayListId != null && !this.isSomedayTask,
+      // Only offer "No date" when there's actually a due date to clear.
+      includeNoDate: this.task?.due != null,
     });
     this.snoozeOpen = true;
   }
@@ -434,6 +453,21 @@ export class TaskCard extends LitElement {
       this.flyOutCollapse('left', () => {
         this.dispatchEvent(
           new CustomEvent('task-someday', {
+            detail: { task: this.task },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      });
+      return;
+    }
+    // The "No date" option is also dateless, but only CLEARS the due date (it
+    // does not move lists). Dispatch its own DISTINCT event (task-nodate),
+    // separate from both task-someday and the dated task-snooze.
+    if (opt.key === 'nodate') {
+      this.flyOutCollapse('left', () => {
+        this.dispatchEvent(
+          new CustomEvent('task-nodate', {
             detail: { task: this.task },
             bubbles: true,
             composed: true,
@@ -466,6 +500,14 @@ export class TaskCard extends LitElement {
     const revealSnooze = this.offset < 0;
     const due = this.task?.due ?? null;
     const overdue = this.isOverdue;
+    // Resolve the due text per `dueDisplay`: nothing when there's no date or it's
+    // hidden; the relative label for 'auto'; otherwise the exact string given.
+    const dueText =
+      due == null || this.dueDisplay === 'hidden'
+        ? null
+        : this.dueDisplay === 'auto'
+          ? formatDueLabel(due, new Date())
+          : this.dueDisplay;
     return html`
       <div class="action complete" aria-hidden="true" ?hidden=${!revealComplete}>
         <svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z" /></svg>
@@ -503,10 +545,8 @@ export class TaskCard extends LitElement {
         <div class="body">
           <div class="title">${this.task?.title || '(untitled)'}</div>
           <div class="meta">
-            ${due
-              ? html`<span class="due ${overdue ? 'overdue' : ''}"
-                  >${formatDueLabel(due, new Date())}</span
-                >`
+            ${dueText
+              ? html`<span class="due ${overdue ? 'overdue' : ''}">${dueText}</span>`
               : ''}
           </div>
           ${this.task?.notes ? html`<div class="notes">${this.task.notes}</div>` : ''}

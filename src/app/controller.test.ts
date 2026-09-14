@@ -400,6 +400,72 @@ describe('AppController.deleteTask', () => {
   });
 });
 
+describe('AppController.clearTaskDate', () => {
+  it('clears the due date via the API and refetches (scheduled task → Now)', async () => {
+    const api = makeApi([task('a', localDate(3))]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    // The future task starts in the Scheduled view, not Now.
+    expect(ctrl.state.scheduled.map((t) => t.id)).toEqual(['a']);
+    const a = ctrl.state.scheduled.find((t) => t.id === 'a')!;
+
+    await ctrl.clearTaskDate(a);
+
+    expect(api.clearDue).toHaveBeenCalledWith('l1', 'a');
+    // load + the refresh after clearing.
+    expect(api.listTasks).toHaveBeenCalledTimes(2);
+    // Now dateless, the task lands in Now's noDate group and leaves Scheduled.
+    expect(ctrl.state.scheduled).toEqual([]);
+    expect(ctrl.state.grouped.noDate.map((t) => t.id)).toEqual(['a']);
+    expect(ctrl.state.allTasks.find((t) => t.id === 'a')?.due).toBeNull();
+  });
+
+  it('optimistically removes the task before the API resolves', async () => {
+    const api = makeApi([task('a', localDate(3)), task('b', localDate(3))]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    const a = ctrl.state.scheduled.find((t) => t.id === 'a')!;
+
+    await ctrl.clearTaskDate(a);
+
+    // 'a' cleared (now in Now), 'b' still scheduled.
+    expect(ctrl.state.scheduled.map((t) => t.id)).toEqual(['b']);
+  });
+
+  it('toasts and does NOT clear or enqueue when offline', async () => {
+    const api = makeApi([task('a', localDate(3))]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    setOnline(false);
+    const a = ctrl.state.scheduled.find((t) => t.id === 'a')!;
+
+    await ctrl.clearTaskDate(a);
+
+    expect(api.clearDue).not.toHaveBeenCalled();
+    expect(ctrl.state.toast).toBe("Can't do that while offline");
+    expect(await listMutations()).toHaveLength(0);
+    // The task is untouched (no optimistic removal offline).
+    expect(ctrl.state.scheduled.map((t) => t.id)).toEqual(['a']);
+  });
+
+  it('rolls the task back in and toasts on a real online error', async () => {
+    const api = makeApi([task('a', localDate(3))]);
+    api.clearDue = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    const a = ctrl.state.scheduled.find((t) => t.id === 'a')!;
+
+    await ctrl.clearTaskDate(a);
+
+    // Restored to its original view; a toast is shown; nothing queued.
+    expect(ctrl.state.scheduled.map((t) => t.id)).toEqual(['a']);
+    expect(ctrl.state.toast).toBeTruthy();
+    expect(await listMutations()).toHaveLength(0);
+  });
+});
+
 describe('AppController.boot', () => {
   it('shows the connect screen when not connected', async () => {
     const auth = makeAuth();

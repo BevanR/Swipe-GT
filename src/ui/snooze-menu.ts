@@ -20,6 +20,34 @@ export class SnoozeMenu extends LitElement {
     md-dialog {
       --md-dialog-container-color: var(--app-surface);
     }
+    /* Mobile: present the menu as a bottom sheet so EVERY option (up to ~9 plus
+       "Pick a date" and Cancel) is reachable without an inner scroll. Material's
+       dialog sets max-width/height/margin/border-radius to \`inherit\` on the
+       inner native <dialog>, so overriding those on the host flows through to it:
+       margin \`auto 0 0\` pins the modal to the bottom, full width, with only the
+       top corners rounded. \`!important\` beats Material's own :host rules (which
+       have higher base specificity than this type selector). */
+    @media (max-width: 600px) {
+      md-dialog {
+        margin: auto 0 0 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        max-height: 92dvh !important;
+        border-start-start-radius: 16px !important;
+        border-start-end-radius: 16px !important;
+        border-end-start-radius: 0 !important;
+        border-end-end-radius: 0 !important;
+      }
+      /* Compact the rows so the full set fits the sheet without scrolling. */
+      md-list-item {
+        --md-list-item-two-line-container-height: 56px;
+      }
+      /* Clear the phone's bottom safe-area inset under the Cancel action. */
+      .actions {
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+      }
+    }
     .title {
       font-size: 1rem;
       font-weight: 600;
@@ -166,7 +194,7 @@ export class SnoozeMenu extends LitElement {
               />
             </div>`
           : nothing}
-        <div slot="actions">
+        <div slot="actions" class="actions">
           <md-text-button @click=${() => this.cancel()}>Cancel</md-text-button>
         </div>
       </md-dialog>

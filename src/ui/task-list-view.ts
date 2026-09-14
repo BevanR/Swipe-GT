@@ -3,6 +3,7 @@ import { customElement, property, query, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import type { GroupedTasks, Task, TaskList, ViewName } from '../types';
 import { groupScheduled } from '../logic/scheduledGroups.js';
+import { scheduledDueDisplay } from '../logic/scheduledDueDisplay.js';
 import { partitionSearch } from '../logic/search.js';
 import type { SearchSections } from '../logic/search.js';
 import { NOW_EMPTY, SOMEDAY_EMPTY, pickEmpty } from './emptyMessages.js';
@@ -37,6 +38,16 @@ const VIEWS: ViewDef[] = [
     icon: 'M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z',
   },
 ];
+
+/**
+ * Session-stable empty-state picks, one per view (only `now` and `someday` are
+ * varied; `scheduled` is a fixed line). Held at MODULE scope so a pick survives
+ * this component being torn down and recreated as the user navigates away and
+ * back — a component-instance field would re-roll on every remount. Chosen
+ * lazily the first time each view's empty state renders and then kept for the
+ * app's lifetime (a full reload starts fresh, which is fine).
+ */
+const emptyPickCache: Partial<Record<ViewName, EmptyMessage>> = {};
 
 /**
  * The main authenticated screen: a header with a 3-way view switcher (Now /
@@ -369,20 +380,11 @@ export class TaskListView extends LitElement {
   }
 
   /**
-   * The cheerful empty-state variant currently on show, plus the view it was
-   * picked for. Plain (non-reactive) fields: read during render, never assigned
-   * in a way that should re-render. A fresh variant is chosen when the empty
-   * view first appears and whenever the view changes (see `pickEmptyFor`), so
-   * it stays stable across unrelated re-renders (banners, loading spinner).
-   */
-  private emptyPick: EmptyMessage | undefined;
-  private emptyPickView: ViewName | undefined;
-
-  /**
-   * The empty-state message for `view`. Now and Someday get a fresh, varied
-   * cheerful message; Scheduled keeps its single fixed line. The pick is cached
-   * per view and only re-rolled when the view changes or after the list has
-   * been non-empty (`resetEmptyPick`), so it doesn't reshuffle every render.
+   * The empty-state message for `view`. Now and Someday get a varied cheerful
+   * message; Scheduled keeps its single fixed line. Each view's varied pick is
+   * chosen ONCE (the first time that view's empty state renders) and then kept
+   * for the app's lifetime via the module-scoped {@link emptyPickCache}, so it
+   * never reshuffles on re-render, view switches, or navigation away and back.
    */
   private pickEmptyFor(view: ViewName): EmptyMessage {
     if (view === 'scheduled') {
@@ -392,17 +394,12 @@ export class TaskListView extends LitElement {
         subtitle: 'Tasks due after today will appear here.',
       };
     }
-    if (!this.emptyPick || this.emptyPickView !== view) {
-      this.emptyPick = pickEmpty(view === 'someday' ? SOMEDAY_EMPTY : NOW_EMPTY);
-      this.emptyPickView = view;
+    let pick = emptyPickCache[view];
+    if (!pick) {
+      pick = pickEmpty(view === 'someday' ? SOMEDAY_EMPTY : NOW_EMPTY);
+      emptyPickCache[view] = pick;
     }
-    return this.emptyPick;
-  }
-
-  /** Forget the cached pick so the next empty view rolls a fresh variant. */
-  private resetEmptyPick(): void {
-    this.emptyPick = undefined;
-    this.emptyPickView = undefined;
+    return pick;
   }
 
   private cacheLabel(): string {
@@ -468,12 +465,6 @@ export class TaskListView extends LitElement {
   render() {
     const tasks = this.visibleTasks();
     const searching = this.searchQuery.trim() !== '';
-    // The empty state only shows when not searching and the view has no tasks.
-    // Whenever that's not the case, forget the cached pick so the next time the
-    // empty view appears it rolls a fresh, cheerful variant.
-    if (searching || tasks.length > 0) {
-      this.resetEmptyPick();
-    }
     const groups = !searching && this.view === 'scheduled' ? this.futureGroups() : [];
     const sections = searching
       ? partitionSearch(tasks, this.allTasks, this.searchQuery)
@@ -594,6 +585,7 @@ export class TaskListView extends LitElement {
                             html`<task-card
                               .task=${t}
                               .somedayListId=${this.somedayListId}
+                              .dueDisplay=${scheduledDueDisplay(g.key, t.due)}
                             ></task-card>`,
                         )}
                       `,

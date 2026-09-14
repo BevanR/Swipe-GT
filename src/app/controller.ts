@@ -316,6 +316,39 @@ export class AppController extends EventTarget {
   }
 
   /**
+   * Clear a task's due date (the "No date" snooze option). Clearing the date
+   * changes which view the task belongs to — e.g. a Scheduled task becomes a Now
+   * task — so we optimistically remove it from the current view, clear the date
+   * via the API, then re-fetch so it reappears in its new home.
+   *
+   * Distinct from {@link moveToSomeday}: this ONLY clears the date and never
+   * moves lists (a task already in the Someday list simply stays there, dateless
+   * = the Someday view). Offline is out of scope (like add/someday/edit): we
+   * toast and do NOT enqueue, with no optimistic removal to roll back since we
+   * bail before touching state. Other online failures roll the card back in.
+   */
+  async clearTaskDate(task: Task): Promise<void> {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      // Offline is out of scope: do NOT enqueue; just tell the user.
+      this.showToast("Can't do that while offline");
+      return;
+    }
+    const removed = this.removeTask(task.id);
+    try {
+      await this.api.clearDue(task.taskListId, task.id);
+      await this.refresh();
+    } catch (err) {
+      if (err instanceof SilentRenewFailedError) {
+        if (removed) this.restoreTask(removed);
+        this.patch({ screen: 'connect', connectError: false });
+        return;
+      }
+      if (removed) this.restoreTask(removed);
+      this.showToast('Something went wrong. Try again.');
+    }
+  }
+
+  /**
    * Create a new task, then re-fetch so it lands in the correct view (Now if due
    * today/overdue/none, Scheduled if future). Requires connectivity and
    * auth — offline add is out of scope, so we surface an error rather than

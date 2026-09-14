@@ -91,6 +91,8 @@ export class AppRoot extends LitElement {
           void this.controller.snoozeTask(e.detail.task, e.detail.due)}
         @task-someday=${(e: CustomEvent<{ task: Task }>) =>
           void this.controller.moveToSomeday(e.detail.task)}
+        @task-nodate=${(e: CustomEvent<{ task: Task }>) =>
+          void this.controller.clearTaskDate(e.detail.task)}
         @task-open=${(e: CustomEvent<{ task: Task }>) =>
           navigate('edit', { listId: e.detail.task.taskListId, taskId: e.detail.task.id })}
         @set-view=${(e: CustomEvent<ViewName>) => void this.controller.setView(e.detail)}

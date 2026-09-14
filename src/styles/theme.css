@@ -172,7 +172,19 @@
     --app-warning-accent: #fb8c00;
     --md-sys-color-surface: #2d2e31;
     --md-sys-color-on-surface: #e8eaed;
-    --md-sys-color-surface-container-high: #2d2e31;
+    --md-sys-color-surface-container-high: #35363a;
+    /* Dark values for the tokens the md-outlined-select FIELD and its dropdown
+       MENU read. Without these the menu falls back to Material's built-in LIGHT
+       scheme (light surface) while our on-surface is light too → white-on-white.
+       surface-container is the menu (md-menu) surface; on-surface-variant is the
+       field label / option supporting text; outline(-variant) is the field's
+       outline. Set globally so they pierce the components' shadow DOM. */
+    --md-sys-color-surface-container: #2d2e31;
+    --md-sys-color-surface-container-low: #292a2d;
+    --md-sys-color-surface-container-highest: #3c4043;
+    --md-sys-color-on-surface-variant: #c4c7c5;
+    --md-sys-color-outline: #8e918f;
+    --md-sys-color-outline-variant: #444746;
     --md-sys-color-primary: #8ab4f8;
     --md-sys-color-on-primary: #202124;
   }
@@ -188,7 +200,15 @@
     --app-warning-accent: #fb8c00;
     --md-sys-color-surface: #2d2e31;
     --md-sys-color-on-surface: #e8eaed;
-    --md-sys-color-surface-container-high: #2d2e31;
+    --md-sys-color-surface-container-high: #35363a;
+    /* Dark values for the md-outlined-select FIELD + dropdown MENU tokens — see
+       the note in the inbox dark block above (prevents white-on-white). */
+    --md-sys-color-surface-container: #2d2e31;
+    --md-sys-color-surface-container-low: #292a2d;
+    --md-sys-color-surface-container-highest: #3c4043;
+    --md-sys-color-on-surface-variant: #c4c7c5;
+    --md-sys-color-outline: #8e918f;
+    --md-sys-color-outline-variant: #444746;
     --md-sys-color-primary: #8ab4f8;
     --md-sys-color-on-primary: #202124;
   }

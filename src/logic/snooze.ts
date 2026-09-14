@@ -28,11 +28,16 @@ import type { SnoozeOption } from '../types';
  *              `opts.includeSomeday` is true, a special dateless `someday` option
  *              is appended (park the task in the Someday list); its `date` is
  *              null. Callers set this only when a Someday list is configured and
- *              the task isn't already a dateless Someday-list task.
+ *              the task isn't already a dateless Someday-list task. When
+ *              `opts.includeNoDate` is true, a dateless `nodate` option (clear
+ *              the due date, moving the task to Now) is appended after the date
+ *              options; its `date` is null. Callers set this only when the task
+ *              currently HAS a due date to clear. It sits just before `someday`
+ *              (both clear the date; `someday` also moves lists).
  */
 export function computeSnoozeOptions(
   today: Date = new Date(),
-  opts?: { includeToday?: boolean; includeSomeday?: boolean },
+  opts?: { includeToday?: boolean; includeSomeday?: boolean; includeNoDate?: boolean },
 ): SnoozeOption[] {
   // Local calendar anchor at local midnight; `getDay()` gives 0=Sun..6=Sat.
   const year = today.getFullYear();
@@ -92,7 +97,13 @@ export function computeSnoozeOptions(
     date: toLocalDateString(new Date(year, month + 1, 1)),
   });
 
-  // 6. Someday — a dateless park option, appended last. Has no date.
+  // 6. No date — clear the due date (moving the task to Now). Dateless; sits
+  //    just after the date options (and before Someday when both are shown).
+  if (opts?.includeNoDate) {
+    options.push({ key: 'nodate', label: 'No date', date: null });
+  }
+
+  // 7. Someday — a dateless park option, appended last. Has no date.
   if (opts?.includeSomeday) {
     options.push({ key: 'someday', label: 'Someday', date: null });
   }
