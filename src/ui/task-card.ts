@@ -58,6 +58,12 @@ export class TaskCard extends LitElement {
       fill: currentColor;
       flex: none;
     }
+    /* The bare \`hidden\` attribute is overridden by \`.action { display: flex }\`
+       (equal specificity, author wins), so an explicit rule is needed or BOTH
+       reveal layers paint and the last one (snooze/amber) covers the green. */
+    .action[hidden] {
+      display: none;
+    }
     .front {
       position: relative;
       display: flex;
@@ -313,10 +319,7 @@ export class TaskCard extends LitElement {
   };
 
   private flyOutAndComplete(): void {
-    const w = this.width();
-    this.animating = true;
-    this.offset = w * 1.15;
-    this.afterTransition(() => {
+    this.flyOutCollapse('right', () => {
       this.dispatchEvent(
         new CustomEvent('task-complete', {
           detail: { task: this.task },
@@ -325,6 +328,26 @@ export class TaskCard extends LitElement {
         }),
       );
     });
+  }
+
+  /**
+   * Slide the front out in `dir` (keeping the coloured reveal visible), then
+   * collapse the row's height to 0 over ~200ms so completing/snoozing doesn't
+   * leave an empty gap, and finally fire `dispatch` for the controller to drop
+   * the task. (Later: hold this open with an Undo button before collapsing.)
+   */
+  private flyOutCollapse(dir: 'left' | 'right', dispatch: () => void): void {
+    const startHeight = this.offsetHeight;
+    this.animating = true;
+    this.offset = (dir === 'right' ? 1 : -1) * this.width() * 1.15;
+    // Pin the current height, force a reflow, then transition it to 0.
+    this.style.height = `${startHeight}px`;
+    this.style.transition = 'height 0.2s ease';
+    void this.offsetHeight;
+    requestAnimationFrame(() => {
+      this.style.height = '0px';
+    });
+    window.setTimeout(dispatch, 220);
   }
 
   private openSnooze(): void {
@@ -338,10 +361,7 @@ export class TaskCard extends LitElement {
     e.stopPropagation();
     this.snoozeOpen = false;
     const due = e.detail.date;
-    this.animating = true;
-    const w = this.width();
-    this.offset = -w * 1.15;
-    this.afterTransition(() => {
+    this.flyOutCollapse('left', () => {
       this.dispatchEvent(
         new CustomEvent('task-snooze', {
           detail: { task: this.task, due },
@@ -358,22 +378,6 @@ export class TaskCard extends LitElement {
     this.animating = true;
     this.offset = 0;
   };
-
-  /** Run `fn` once the front's transform transition ends (with a fallback). */
-  private afterTransition(fn: () => void): void {
-    const front = this.renderRoot.querySelector('.front') as HTMLElement | null;
-    let done = false;
-    const run = () => {
-      if (done) return;
-      done = true;
-      fn();
-    };
-    if (front) {
-      front.addEventListener('transitionend', run, { once: true });
-    }
-    // Fallback in case transitionend doesn't fire (reduced motion, no layout).
-    setTimeout(run, 320);
-  }
 
   render() {
     const revealComplete = this.offset > 0;

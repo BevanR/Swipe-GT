@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDueLabel } from './dueLabel';
+import { formatDueLabel, formatFullDate } from './dueLabel';
 
 // All `today` values are constructed from LOCAL calendar components
 // (new Date(year, monthIndex, day)) so the tests are deterministic regardless
@@ -110,4 +110,23 @@ describe('formatDueLabel — never emits an ISO date string', () => {
       expect(formatDueLabel(due, today)).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     });
   }
+});
+
+describe('formatFullDate — always absolute, never relative words', () => {
+  const today = new Date(2026, 8, 16); // Wednesday 2026-09-16
+
+  it('formats near dates absolutely (no relative words)', () => {
+    expect(formatFullDate('2026-09-14', today)).toBe('Monday 14 Sep');
+    expect(formatFullDate('2026-09-16', today)).toBe('Wednesday 16 Sep'); // not "today"
+    expect(formatFullDate('2026-09-17', today)).toBe('Thursday 17 Sep'); // not "tomorrow"
+  });
+
+  it('omits the year in the same year, includes it otherwise', () => {
+    expect(formatFullDate('2026-12-25', today)).toBe('Friday 25 Dec');
+    expect(formatFullDate('2027-01-01', today)).toBe('Friday 1 Jan 2027');
+  });
+
+  it('never emits an ISO date', () => {
+    expect(formatFullDate('2027-03-09', today)).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+  });
 });

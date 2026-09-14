@@ -85,3 +85,19 @@ export function formatDueLabel(due: string, today: Date = new Date()): string {
   const label = `${WEEKDAYS[dueDow]} ${dd} ${MONTHS_SHORT[dm - 1]}`;
   return dy === ty ? label : `${label} ${dy}`;
 }
+
+/**
+ * Format a due date as an ALWAYS-absolute friendly date, e.g. `Monday 14 Sep`
+ * (with a trailing year only when it differs from today's year). Unlike
+ * `formatDueLabel`, this never returns relative words — used where the concrete
+ * date matters regardless of proximity (e.g. the snooze menu subtitles).
+ *
+ * @param date  Date-only string 'YYYY-MM-DD'.
+ * @param today Reference for the "same year" check; defaults to `new Date()`.
+ */
+export function formatFullDate(date: string, today: Date = new Date()): string {
+  const [dy, dm, dd] = date.split('-').map(Number) as [number, number, number];
+  const dueDow = new Date(dy, dm - 1, dd).getDay();
+  const label = `${WEEKDAYS[dueDow]} ${dd} ${MONTHS_SHORT[dm - 1]}`;
+  return dy === today.getFullYear() ? label : `${label} ${dy}`;
+}
