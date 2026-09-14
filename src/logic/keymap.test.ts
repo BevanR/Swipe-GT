@@ -9,8 +9,14 @@ describe('keyToAction', () => {
     expect(keyToAction('x')).toBe('complete');
     expect(keyToAction('s')).toBe('snooze');
     expect(keyToAction('u')).toBe('undo');
+    expect(keyToAction('z')).toBe('undo');
     expect(keyToAction('j')).toBe('next');
     expect(keyToAction('k')).toBe('prev');
+  });
+
+  it('maps left/right arrows to view prev/next', () => {
+    expect(keyToAction('ArrowLeft')).toBe('view-prev');
+    expect(keyToAction('ArrowRight')).toBe('view-next');
   });
 
   it('is case-insensitive for letters only without Shift', () => {

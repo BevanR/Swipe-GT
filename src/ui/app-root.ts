@@ -228,6 +228,18 @@ export class AppRoot extends LitElement {
         e.preventDefault();
         void this.controller.setView('someday');
         break;
+      case 'view-prev':
+      case 'view-next': {
+        e.preventDefault();
+        const order: ViewName[] = ['now', 'scheduled', 'someday'];
+        const i = order.indexOf(s.view);
+        const j = Math.min(
+          order.length - 1,
+          Math.max(0, i + (action === 'view-next' ? 1 : -1)),
+        );
+        if (j !== i) void this.controller.setView(order[j]);
+        break;
+      }
       case 'next':
         e.preventDefault();
         view?.moveSelection(1);

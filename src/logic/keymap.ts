@@ -13,6 +13,8 @@ export type KeyAction =
   | 'view-now'
   | 'view-scheduled'
   | 'view-someday'
+  | 'view-prev'
+  | 'view-next'
   | 'next'
   | 'prev'
   | 'edit'
@@ -59,6 +61,10 @@ export function keyToAction(key: string, mods: KeyModifiers = {}): KeyAction | n
       return 'next';
     case 'ArrowUp':
       return 'prev';
+    case 'ArrowLeft':
+      return 'view-prev';
+    case 'ArrowRight':
+      return 'view-next';
     case 'Enter':
       return 'edit';
   }
@@ -88,6 +94,7 @@ export function keyToAction(key: string, mods: KeyModifiers = {}): KeyAction | n
     case 's':
       return 'snooze';
     case 'u':
+    case 'z':
       return 'undo';
     default:
       return null;
