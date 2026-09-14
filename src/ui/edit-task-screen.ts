@@ -245,6 +245,16 @@ export class EditTaskScreen extends LitElement {
   }
 
   /**
+   * Capture a date chosen from the native date input. Bound to BOTH `change` and
+   * `input` because Android browsers fire `change` (not always `input`) when a
+   * date is committed from the OS calendar, so the value is captured without a
+   * second tap. Assignment is idempotent, so both events firing is harmless.
+   */
+  private onPickDate(e: Event): void {
+    this.pickedDate = (e.target as HTMLInputElement).value;
+  }
+
+  /**
    * The resolved due for the current selection: a 'YYYY-MM-DD' string, or null
    * when "No date" is chosen (which CLEARS the date). Unlike the Add screen this
    * returns null (not undefined) for the dateless option so a diff can tell
@@ -362,8 +372,8 @@ export class EditTaskScreen extends LitElement {
                   type="date"
                   aria-label="Pick a due date"
                   .value=${this.pickedDate}
-                  @input=${(e: Event) =>
-                    (this.pickedDate = (e.target as HTMLInputElement).value)}
+                  @change=${(e: Event) => this.onPickDate(e)}
+                  @input=${(e: Event) => this.onPickDate(e)}
                 />`
               : nothing}
           </div>

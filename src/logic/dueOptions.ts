@@ -36,7 +36,8 @@ export function buildDueOptions(today: Date = new Date()): DueOption[] {
  * Build the ordered list of Due options offered on the Add Task screen's Due
  * DROPDOWN. Same as {@link buildDueOptions} but with a dateless `Someday` option
  * inserted just before `Pick a date` when a Someday list is configured:
- *  - `No date` (the default) — no due date, targets the Google default list.
+ *  - `Now (no date)` (the default) — no due date, targets the Google default
+ *    list (so the task lands in the Now view).
  *  - the snooze menu's date options via `computeSnoozeOptions(today, {
  *    includeToday: true })` (Today … Next month), all targeting the default list.
  *  - `Someday` — ONLY when `opts.hasSomeday`; dateless, parks the task in the
@@ -51,11 +52,33 @@ export function buildAddDueOptions(
 ): DueOption[] {
   const snooze = computeSnoozeOptions(today, { includeToday: true });
   return [
-    { key: 'none', label: 'No date', date: null },
+    { key: 'none', label: 'Now (no date)', date: null },
     ...snooze.map((o) => ({ key: o.key, label: o.label, date: o.date })),
     ...(opts?.hasSomeday ? [{ key: 'someday', label: 'Someday', date: null }] : []),
     { key: 'pick', label: 'Pick a date', date: null },
   ];
+}
+
+/**
+ * Validate a date string committed by a native `<input type="date">` and return
+ * the normalized 'YYYY-MM-DD' string, or `null` when it is empty, malformed, or
+ * an impossible calendar date (e.g. 2026-02-31). Native pickers only ever emit a
+ * valid value or the empty string, but this guard lets the date-apply path be
+ * unit-tested and stays defensive against the `input`/`change` events that fire
+ * mid-typing on some browsers.
+ */
+export function normalizePickedDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const dt = new Date(year, month - 1, day);
+  if (dt.getFullYear() !== year || dt.getMonth() !== month - 1 || dt.getDate() !== day) {
+    return null;
+  }
+  return value;
 }
 
 /** The list + due a selected Add-screen Due option resolves to. */

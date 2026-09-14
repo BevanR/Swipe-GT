@@ -31,7 +31,7 @@ export interface AddTaskInput {
  *
  * There is no list picker: new tasks are created in the user's Google default
  * list, EXCEPT when the "Someday" due option is chosen, which targets the
- * Someday list. Due is chosen from a single dropdown — "No date" (default), the
+ * Someday list. Due is chosen from a single dropdown — "Now (no date)" (default), the
  * snooze date options, "Someday" (only when a Someday list is configured), and
  * "Pick a date" (which reveals an inline native date input).
  */
@@ -194,9 +194,17 @@ export class AddTaskScreen extends LitElement {
     });
   }
 
-  firstUpdated(): void {
-    // Autofocus the title field on entry.
-    void this.updateComplete.then(() => this.titleField?.focus());
+  async firstUpdated(): Promise<void> {
+    // Focus the title field on entry so the on-screen keyboard opens immediately.
+    // Do it as early as possible (here in firstUpdated), awaiting only the field's
+    // own render, so the browser still ties the focus to the navigation tap's
+    // user activation. Guard so it never throws if the field isn't ready.
+    await this.updateComplete;
+    const field = this.titleField;
+    if (!field) return;
+    await field.updateComplete;
+    // MdOutlinedTextField.focus() delegates to its inner native <input>.
+    field.focus();
   }
 
   updated(changed: Map<string, unknown>): void {
@@ -224,6 +232,16 @@ export class AddTaskScreen extends LitElement {
     } catch {
       input.focus();
     }
+  }
+
+  /**
+   * Capture a date chosen from the native date input. Bound to BOTH `change` and
+   * `input` because Android browsers fire `change` (not always `input`) when a
+   * date is committed from the OS calendar, so the value is captured without a
+   * second tap. Assignment is idempotent, so both events firing is harmless.
+   */
+  private onPickDate(e: Event): void {
+    this.pickedDate = (e.target as HTMLInputElement).value;
   }
 
   /** The resolved `{ taskListId, due? }` for the current selection, or null. */
@@ -324,8 +342,8 @@ export class AddTaskScreen extends LitElement {
                   type="date"
                   aria-label="Pick a due date"
                   .value=${this.pickedDate}
-                  @input=${(e: Event) =>
-                    (this.pickedDate = (e.target as HTMLInputElement).value)}
+                  @change=${(e: Event) => this.onPickDate(e)}
+                  @input=${(e: Event) => this.onPickDate(e)}
                 />`
               : nothing}
           </div>

@@ -6,6 +6,7 @@ import '@material/web/list/list-item.js';
 import '@material/web/button/text-button.js';
 import type { SnoozeOption } from '../types';
 import { formatFullDate } from '../logic/dueLabel';
+import { normalizePickedDate } from '../logic/dueOptions';
 import type { MdDialog } from '@material/web/dialog/dialog.js';
 
 /**
@@ -92,6 +93,13 @@ export class SnoozeMenu extends LitElement {
   /** Whether the inline "Pick a date" input is revealed. */
   @state() private picking = false;
 
+  /**
+   * Guards the date input against a single OS-picker selection firing BOTH
+   * `change` and `input` (or firing twice) and dispatching two `snooze-pick`s.
+   * Reset each time the "Pick a date" affordance is revealed.
+   */
+  private pickHandled = false;
+
   private dialog(): MdDialog | null {
     return this.renderRoot.querySelector('md-dialog');
   }
@@ -102,8 +110,15 @@ export class SnoozeMenu extends LitElement {
       if (!d) return;
       // Reset the pick-a-date affordance each time the menu opens or closes.
       this.picking = false;
-      if (this.open && !d.open) void d.show();
-      else if (!this.open && d.open) void d.close();
+      this.pickHandled = false;
+      if (this.open && !d.open) {
+        // Start each open from a clean returnValue so a prior "picked" close
+        // can't make the next scrim/Escape dismissal skip the cancel path.
+        d.returnValue = '';
+        void d.show();
+      } else if (!this.open && d.open) {
+        void d.close();
+      }
     }
     if (changed.has('picking') && this.picking) {
       // Open the OS date picker directly (one tap) once the input has rendered.
@@ -122,6 +137,11 @@ export class SnoozeMenu extends LitElement {
   }
 
   private pick(option: SnoozeOption): void {
+    // Mark this close as a deliberate pick so the dialog's @closed handler does
+    // NOT treat the ensuing close (driven by the parent flipping `open`) as a
+    // cancel. Material's md-dialog exposes the native <dialog> returnValue.
+    const d = this.dialog();
+    if (d) d.returnValue = 'picked';
     this.dispatchEvent(
       new CustomEvent('snooze-pick', { detail: option, bubbles: true, composed: true }),
     );
@@ -129,14 +149,23 @@ export class SnoozeMenu extends LitElement {
 
   /** Reveal the inline native date input for an arbitrary date. */
   private startPick(): void {
+    this.pickHandled = false;
     this.picking = true;
   }
 
-  /** Dispatch a `pick` snooze once the user has chosen a date. */
+  /**
+   * Apply a date chosen from the native `<input type="date">`. Bound to BOTH
+   * `change` and `input`: Android browsers fire `change` (not always `input`)
+   * when a date is committed from the OS calendar, especially via showPicker(),
+   * so listening only for `input` left the selection unapplied until a second
+   * tap. `pickHandled` dedupes the two events from a single selection.
+   */
   private onPickDate(e: Event): void {
-    const value = (e.target as HTMLInputElement).value;
-    if (!value) return;
-    this.pick({ key: 'pick', label: 'Pick a date', date: value });
+    if (this.pickHandled) return;
+    const date = normalizePickedDate((e.target as HTMLInputElement).value);
+    if (!date) return;
+    this.pickHandled = true;
+    this.pick({ key: 'pick', label: 'Pick a date', date });
   }
 
   private cancel(): void {
@@ -199,6 +228,7 @@ export class SnoozeMenu extends LitElement {
               <input
                 type="date"
                 aria-label="Pick a due date"
+                @change=${(e: Event) => this.onPickDate(e)}
                 @input=${(e: Event) => this.onPickDate(e)}
               />
             </div>`

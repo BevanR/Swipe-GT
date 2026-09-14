@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildAddDueOptions,
   buildDueOptions,
+  normalizePickedDate,
   resolveAddTarget,
   selectDueOption,
 } from './dueOptions';
@@ -52,9 +53,9 @@ describe('buildDueOptions', () => {
 describe('buildAddDueOptions', () => {
   const today = new Date(2026, 8, 16); // Wed 2026-09-16
 
-  it('is "No date" first and "Pick a date" last', () => {
+  it('is "Now (no date)" first and "Pick a date" last', () => {
     const options = buildAddDueOptions(today);
-    expect(options[0]).toEqual({ key: 'none', label: 'No date', date: null });
+    expect(options[0]).toEqual({ key: 'none', label: 'Now (no date)', date: null });
     expect(options[options.length - 1]).toEqual({
       key: 'pick',
       label: 'Pick a date',
@@ -190,5 +191,33 @@ describe('selectDueOption', () => {
       key: 'pick',
       pickedDate: '2027-03-04',
     });
+  });
+});
+
+// The "Pick a date" apply path (snooze + add + edit) validates the native date
+// input's value through this pure helper before committing it.
+describe('normalizePickedDate', () => {
+  it('returns a well-formed YYYY-MM-DD value unchanged', () => {
+    expect(normalizePickedDate('2026-09-14')).toBe('2026-09-14');
+    expect(normalizePickedDate('2027-03-04')).toBe('2027-03-04');
+  });
+
+  it('returns null for empty or missing values', () => {
+    expect(normalizePickedDate('')).toBeNull();
+    expect(normalizePickedDate(null)).toBeNull();
+    expect(normalizePickedDate(undefined)).toBeNull();
+  });
+
+  it('returns null for malformed strings', () => {
+    expect(normalizePickedDate('2026-9-4')).toBeNull();
+    expect(normalizePickedDate('09/14/2026')).toBeNull();
+    expect(normalizePickedDate('2026-09-14T00:00:00Z')).toBeNull();
+    expect(normalizePickedDate('not-a-date')).toBeNull();
+  });
+
+  it('returns null for impossible calendar dates', () => {
+    expect(normalizePickedDate('2026-02-31')).toBeNull();
+    expect(normalizePickedDate('2026-13-01')).toBeNull();
+    expect(normalizePickedDate('2026-00-10')).toBeNull();
   });
 });
