@@ -3,7 +3,6 @@ import { customElement, property, query, state } from 'lit/decorators.js';
 import '@material/web/textfield/outlined-text-field.js';
 import '@material/web/select/outlined-select.js';
 import '@material/web/select/select-option.js';
-import '@material/web/button/filled-button.js';
 import '@material/web/button/text-button.js';
 import type { MdOutlinedTextField } from '@material/web/textfield/outlined-text-field.js';
 import type { Task, TaskList } from '../types';
@@ -63,6 +62,8 @@ export class EditTaskScreen extends LitElement {
       gap: 8px;
       padding: 12px 8px;
       padding-top: max(12px, env(safe-area-inset-top, 0px));
+      padding-right: max(8px, env(safe-area-inset-right, 0px));
+      padding-left: max(8px, env(safe-area-inset-left, 0px));
       border-bottom: 1px solid var(--app-border);
       background: var(--app-header-bg);
     }
@@ -71,6 +72,11 @@ export class EditTaskScreen extends LitElement {
       margin: 0;
       font-size: 1.1rem;
       font-weight: 600;
+    }
+    .header-action {
+      --md-text-button-label-text-color: var(--app-accent);
+      --md-text-button-label-text-weight: 700;
+      flex: none;
     }
     .iconbtn {
       appearance: none;
@@ -174,9 +180,6 @@ export class EditTaskScreen extends LitElement {
       padding-bottom: max(12px, calc(12px + env(safe-area-inset-bottom, 0px)));
       border-top: 1px solid var(--app-border);
       background: var(--app-header-bg);
-    }
-    md-filled-button {
-      width: 100%;
     }
     .delete {
       --md-text-button-label-text-color: var(--app-danger, #c5221f);
@@ -346,6 +349,14 @@ export class EditTaskScreen extends LitElement {
             </svg>
           </button>
           <h1>Edit task</h1>
+          <md-text-button
+            class="header-action"
+            aria-label="Save changes"
+            ?disabled=${!this.canSave()}
+            @click=${() => void this.save()}
+          >
+            Save
+          </md-text-button>
         </header>
 
         <form id="edit-task-form" @submit=${(e: Event) => this.onFormSubmit(e)}>
@@ -414,9 +425,6 @@ export class EditTaskScreen extends LitElement {
         </form>
 
         <footer>
-          <md-filled-button ?disabled=${!this.canSave()} @click=${() => void this.save()}>
-            Save
-          </md-filled-button>
           <md-text-button
             class="delete"
             ?disabled=${this.submitting}

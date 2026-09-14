@@ -126,7 +126,8 @@ export class AppRoot extends LitElement {
         // (e.g. a future `#/edit/...`) slot in here.
         if (this.route.name === 'add') {
           return html`<add-task-screen
-            .lists=${s.lists}
+            .defaultListId=${s.lists[0]?.id ?? ''}
+            .somedayListId=${s.somedayListId}
             .onSubmit=${(input: { taskListId: string; title: string; due?: string }) =>
               this.controller.addTask(input)}
           ></add-task-screen>`;

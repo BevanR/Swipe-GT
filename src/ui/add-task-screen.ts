@@ -3,10 +3,9 @@ import { customElement, property, query, state } from 'lit/decorators.js';
 import '@material/web/textfield/outlined-text-field.js';
 import '@material/web/select/outlined-select.js';
 import '@material/web/select/select-option.js';
-import '@material/web/button/filled-button.js';
+import '@material/web/button/text-button.js';
 import type { MdOutlinedTextField } from '@material/web/textfield/outlined-text-field.js';
-import type { TaskList } from '../types';
-import { buildDueOptions } from '../logic/dueOptions';
+import { buildAddDueOptions, resolveAddTarget } from '../logic/dueOptions';
 import type { DueOption } from '../logic/dueOptions';
 import { back, navigate } from '../app/router';
 
@@ -21,13 +20,20 @@ export interface AddTaskInput {
  * The full-viewport "Add task" screen (replaces the old modal dialog). It fills
  * the viewport, respects safe-area insets, and lays out so the common form fits
  * without scrolling on a typical phone. It owns its transient form state; the
- * host mounts it for the `#/add` route and passes the user's lists and an
- * `onSubmit` (which wraps `controller.addTask`). On success it navigates back to
- * the list; on failure it stays put (the controller has already toasted).
+ * host mounts it for the `#/add` route and passes the default list id, the
+ * Someday list id, and an `onSubmit` (which wraps `controller.addTask`). On
+ * success it navigates back to the list; on failure it stays put (the controller
+ * has already toasted).
  *
- * Due is chosen from selectable chips — "No date" (default), the same date
- * options as the snooze menu, and "Pick a date" (which reveals an inline native
- * date input for an arbitrary date) — never a bare always-on date picker.
+ * The PRIMARY action ("Add") lives in the HEADER, right-aligned, so it stays
+ * reachable above the on-screen keyboard while typing (the old sticky footer
+ * button sat behind the keyboard on mobile). Enter still submits.
+ *
+ * There is no list picker: new tasks are created in the user's Google default
+ * list, EXCEPT when the "Someday" due option is chosen, which targets the
+ * Someday list. Due is chosen from a single dropdown — "No date" (default), the
+ * snooze date options, "Someday" (only when a Someday list is configured), and
+ * "Pick a date" (which reveals an inline native date input).
  */
 @customElement('add-task-screen')
 export class AddTaskScreen extends LitElement {
@@ -66,6 +72,8 @@ export class AddTaskScreen extends LitElement {
       gap: 8px;
       padding: 12px 8px;
       padding-top: max(12px, env(safe-area-inset-top, 0px));
+      padding-right: max(8px, env(safe-area-inset-right, 0px));
+      padding-left: max(8px, env(safe-area-inset-left, 0px));
       border-bottom: 1px solid var(--app-border);
       background: var(--app-header-bg);
     }
@@ -74,6 +82,11 @@ export class AddTaskScreen extends LitElement {
       margin: 0;
       font-size: 1.1rem;
       font-weight: 600;
+    }
+    .header-action {
+      --md-text-button-label-text-color: var(--app-accent);
+      --md-text-button-label-text-weight: 700;
+      flex: none;
     }
     .iconbtn {
       appearance: none;
@@ -110,6 +123,7 @@ export class AddTaskScreen extends LitElement {
       padding: 20px 16px;
       padding-left: max(16px, env(safe-area-inset-left, 0px));
       padding-right: max(16px, env(safe-area-inset-right, 0px));
+      padding-bottom: max(20px, calc(20px + env(safe-area-inset-bottom, 0px)));
     }
     md-outlined-text-field,
     md-outlined-select {
@@ -123,36 +137,6 @@ export class AddTaskScreen extends LitElement {
       color: var(--app-on-surface-muted);
       margin-bottom: 8px;
     }
-    .chips {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    .chip {
-      appearance: none;
-      border: 1px solid var(--app-border);
-      background: var(--app-surface);
-      color: var(--app-on-surface);
-      border-radius: 999px;
-      padding: 8px 14px;
-      font: inherit;
-      font-size: 0.85rem;
-      cursor: pointer;
-      line-height: 1.1;
-    }
-    .chip:hover {
-      background: color-mix(in srgb, var(--app-on-surface) 6%, var(--app-surface));
-    }
-    .chip[aria-pressed='true'] {
-      background: color-mix(in srgb, var(--app-accent) 16%, transparent);
-      border-color: var(--app-accent);
-      color: var(--app-accent);
-      font-weight: 600;
-    }
-    .chip:focus-visible {
-      outline: 2px solid var(--app-accent);
-      outline-offset: 2px;
-    }
     input[type='date'] {
       margin-top: 12px;
       appearance: none;
@@ -164,19 +148,12 @@ export class AddTaskScreen extends LitElement {
       border-radius: 8px;
       padding: 12px;
       color-scheme: light dark;
+      width: 100%;
+      box-sizing: border-box;
     }
     input[type='date']:focus-visible {
       outline: 2px solid var(--app-accent);
       outline-offset: -1px;
-    }
-    footer {
-      padding: 12px 16px;
-      padding-bottom: max(12px, calc(12px + env(safe-area-inset-bottom, 0px)));
-      border-top: 1px solid var(--app-border);
-      background: var(--app-header-bg);
-    }
-    md-filled-button {
-      width: 100%;
     }
     @media (prefers-reduced-motion: reduce) {
       :host {
@@ -185,16 +162,14 @@ export class AddTaskScreen extends LitElement {
     }
   `;
 
-  /**
-   * The lists offered in the picker — all the user's lists in Google order, so
-   * `lists[0]` is the Google default list and becomes the pre-selected default.
-   */
-  @property({ attribute: false }) lists: TaskList[] = [];
+  /** The Google default list id (`lists[0]?.id`); new tasks land here. */
+  @property({ attribute: false }) defaultListId = '';
+  /** The designated Someday list id, or null when none is configured. */
+  @property({ attribute: false }) somedayListId: string | null = null;
   /** Async submit handler (wraps controller.addTask). */
   @property({ attribute: false }) onSubmit?: (input: AddTaskInput) => Promise<void>;
 
   @state() private taskTitle = '';
-  @state() private selectedListId = '';
   /** The selected Due option key ('none' by default). */
   @state() private dueKey = 'none';
   /** The date chosen via the "Pick a date" inline input. */
@@ -202,7 +177,7 @@ export class AddTaskScreen extends LitElement {
   @state() private submitting = false;
 
   /** Due options, computed once per mount from "today". */
-  private dueOptions: DueOption[] = buildDueOptions(new Date());
+  private dueOptions: DueOption[] = buildAddDueOptions(new Date());
 
   @query('md-outlined-text-field') private titleField?: MdOutlinedTextField;
   @query('input[type="date"]') private dateInput?: HTMLInputElement;
@@ -211,11 +186,12 @@ export class AddTaskScreen extends LitElement {
     super.connectedCallback();
     // A fresh mount is a fresh form; recompute due options relative to now.
     this.taskTitle = '';
-    this.selectedListId = this.lists[0]?.id ?? '';
     this.dueKey = 'none';
     this.pickedDate = '';
     this.submitting = false;
-    this.dueOptions = buildDueOptions(new Date());
+    this.dueOptions = buildAddDueOptions(new Date(), {
+      hasSomeday: this.somedayListId != null,
+    });
   }
 
   firstUpdated(): void {
@@ -224,8 +200,11 @@ export class AddTaskScreen extends LitElement {
   }
 
   updated(changed: Map<string, unknown>): void {
-    if (this.selectedListId === '' && this.lists.length > 0) {
-      this.selectedListId = this.lists[0].id;
+    // Keep the option set in sync if the Someday config arrives after mount.
+    if (changed.has('somedayListId')) {
+      this.dueOptions = buildAddDueOptions(new Date(), {
+        hasSomeday: this.somedayListId != null,
+      });
     }
     // Focus the inline date input the moment "Pick a date" is chosen.
     if (changed.has('dueKey') && this.dueKey === 'pick') {
@@ -233,16 +212,24 @@ export class AddTaskScreen extends LitElement {
     }
   }
 
-  /** The RFC3339 due to submit for the current selection, or undefined. */
-  private resolvedDue(): string | undefined {
-    if (this.dueKey === 'none') return undefined;
-    if (this.dueKey === 'pick') return this.pickedDate || undefined;
-    const opt = this.dueOptions.find((o) => o.key === this.dueKey);
-    return opt?.date ?? undefined;
+  /** The resolved `{ taskListId, due? }` for the current selection, or null. */
+  private resolvedTarget() {
+    return resolveAddTarget({
+      dueKey: this.dueKey,
+      pickedDate: this.pickedDate,
+      options: this.dueOptions,
+      defaultListId: this.defaultListId,
+      somedayListId: this.somedayListId,
+    });
   }
 
   private canSubmit(): boolean {
-    return this.taskTitle.trim().length > 0 && !this.submitting && this.lists.length > 0;
+    return (
+      this.taskTitle.trim().length > 0 &&
+      !this.submitting &&
+      this.defaultListId !== '' &&
+      this.resolvedTarget() !== null
+    );
   }
 
   private cancel(): void {
@@ -251,12 +238,11 @@ export class AddTaskScreen extends LitElement {
 
   private async submit(): Promise<void> {
     const title = this.taskTitle.trim();
-    const listId = this.selectedListId || this.lists[0]?.id;
-    if (!title || this.submitting || !listId || !this.onSubmit) return;
+    const target = this.resolvedTarget();
+    if (!title || this.submitting || !target || !this.onSubmit) return;
     this.submitting = true;
-    const due = this.resolvedDue();
     try {
-      await this.onSubmit({ taskListId: listId, title, ...(due ? { due } : {}) });
+      await this.onSubmit({ taskListId: target.taskListId, title, ...(target.due ? { due: target.due } : {}) });
       navigate('list');
     } catch {
       // Stay on the screen; the controller already surfaced an error toast.
@@ -277,7 +263,6 @@ export class AddTaskScreen extends LitElement {
   }
 
   render() {
-    const showPicker = this.lists.length > 1;
     return html`
       <div class="wrap" @keydown=${(e: KeyboardEvent) => this.onKeydown(e)}>
         <header>
@@ -287,6 +272,14 @@ export class AddTaskScreen extends LitElement {
             </svg>
           </button>
           <h1>Add task</h1>
+          <md-text-button
+            class="header-action"
+            aria-label="Add task"
+            ?disabled=${!this.canSubmit()}
+            @click=${() => void this.submit()}
+          >
+            Add
+          </md-text-button>
         </header>
 
         <form id="add-task-form" @submit=${(e: Event) => this.onFormSubmit(e)}>
@@ -299,20 +292,19 @@ export class AddTaskScreen extends LitElement {
 
           <div>
             <span class="field-label" id="due-label">Due</span>
-            <div class="chips" role="group" aria-labelledby="due-label">
+            <md-outlined-select
+              aria-labelledby="due-label"
+              .value=${this.dueKey}
+              @change=${(e: Event) => (this.dueKey = (e.target as HTMLSelectElement).value)}
+            >
               ${this.dueOptions.map(
-                (opt) => html`
-                  <button
-                    type="button"
-                    class="chip"
-                    aria-pressed=${this.dueKey === opt.key}
-                    @click=${() => (this.dueKey = opt.key)}
-                  >
-                    ${opt.label}
-                  </button>
-                `,
+                (opt) => html`<md-select-option
+                  value=${opt.key}
+                  ?selected=${opt.key === this.dueKey}
+                  >${opt.label}</md-select-option
+                >`,
               )}
-            </div>
+            </md-outlined-select>
             ${this.dueKey === 'pick'
               ? html`<input
                   type="date"
@@ -324,36 +316,8 @@ export class AddTaskScreen extends LitElement {
               : nothing}
           </div>
 
-          ${showPicker
-            ? html`<div>
-                <span class="field-label" id="list-label">List</span>
-                <md-outlined-select
-                  aria-labelledby="list-label"
-                  .value=${this.selectedListId}
-                  @change=${(e: Event) =>
-                    (this.selectedListId = (e.target as HTMLSelectElement).value)}
-                >
-                  ${this.lists.map(
-                    (l) => html`<md-select-option
-                      value=${l.id}
-                      ?selected=${l.id === this.selectedListId}
-                      >${l.title}</md-select-option
-                    >`,
-                  )}
-                </md-outlined-select>
-              </div>`
-            : nothing}
           <button type="submit" hidden aria-hidden="true"></button>
         </form>
-
-        <footer>
-          <md-filled-button
-            ?disabled=${!this.canSubmit()}
-            @click=${() => void this.submit()}
-          >
-            Add
-          </md-filled-button>
-        </footer>
       </div>
     `;
   }
