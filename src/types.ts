@@ -10,6 +10,11 @@ export interface Task {
   title: string;
   due: string | null; // RFC3339 date (date only), or null
   status: 'needsAction' | 'completed';
+  /**
+   * Google's manual-order key for this task within its list. Sorts
+   * lexicographically ascending to reproduce the user's "My order". Per-list.
+   */
+  position: string;
   notes?: string;
 }
 

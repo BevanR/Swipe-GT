@@ -20,6 +20,7 @@ function task(id: string, due: string | null): Task {
     title: `Task ${id}`,
     due,
     status: 'needsAction',
+    position: '',
   };
 }
 

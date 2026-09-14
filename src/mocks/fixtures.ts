@@ -49,18 +49,10 @@ export const taskListFixtures: GoogleTaskListResource[] = [
 
 /** Tasks keyed by task-list id, in the shape Google returns them. */
 export const taskFixtures: Record<string, GoogleTaskResource[]> = {
+  // Deliberately NOT in position order: the API is allowed to return tasks in
+  // any order, so listTasks must sort by `position` ascending. Sorted, these
+  // become overdue-1 (…0000), today-1 (…0001), nodate-1 (…0002).
   '@default': [
-    {
-      kind: 'tasks#task',
-      id: 'task-overdue-1',
-      etag: '"etag-1"',
-      title: 'Renew passport',
-      updated: '2026-08-30T10:00:00.000Z',
-      selfLink: 'https://tasks.googleapis.com/tasks/v1/lists/@default/tasks/task-overdue-1',
-      position: '00000000000000000000',
-      status: 'needsAction',
-      due: '2026-09-01T00:00:00.000Z',
-    },
     {
       kind: 'tasks#task',
       id: 'task-today-1',
@@ -81,6 +73,17 @@ export const taskFixtures: Record<string, GoogleTaskResource[]> = {
       selfLink: 'https://tasks.googleapis.com/tasks/v1/lists/@default/tasks/task-nodate-1',
       position: '00000000000000000002',
       status: 'needsAction',
+    },
+    {
+      kind: 'tasks#task',
+      id: 'task-overdue-1',
+      etag: '"etag-1"',
+      title: 'Renew passport',
+      updated: '2026-08-30T10:00:00.000Z',
+      selfLink: 'https://tasks.googleapis.com/tasks/v1/lists/@default/tasks/task-overdue-1',
+      position: '00000000000000000000',
+      status: 'needsAction',
+      due: '2026-09-01T00:00:00.000Z',
     },
   ],
   MTIzNDU2Nzg5: [

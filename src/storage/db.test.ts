@@ -55,7 +55,7 @@ describe('snapshot', () => {
     const snap: Snapshot = {
       fetchedAt: 1000,
       tasks: [
-        { id: 't1', taskListId: 'l1', taskListTitle: 'L1', title: 'A', due: null, status: 'needsAction' },
+        { id: 't1', taskListId: 'l1', taskListTitle: 'L1', title: 'A', due: null, status: 'needsAction', position: '' },
       ],
       lists: [{ id: 'l1', title: 'L1', included: true }],
     };

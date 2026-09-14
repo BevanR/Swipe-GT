@@ -29,7 +29,9 @@ This doc is the durable handoff for humans and future agents. Keep it current.
 
 - OAuth **client ID is public by design** and committed as the default in `src/config.ts` (overridable via `VITE_GOOGLE_CLIENT_ID`). **No client secret exists** — the GIS token flow doesn't use one.
 - Scope: `https://www.googleapis.com/auth/tasks` only.
-- The Google Cloud OAuth app stays in **Testing** mode; users must be added as **test users** (Console → OAuth consent screen → Audience). Publishing to production would trigger Google verification for the sensitive Tasks scope — avoid.
+- The Google Cloud OAuth app stays in **Testing** mode; users must be added as **test users** before they can sign in. Publishing to production would trigger Google verification for the sensitive Tasks scope — avoid.
+  - **Add test users here:** https://console.cloud.google.com/auth/audience?project=bevanrs-g-tasks-alt-ui (Console → APIs & Services → OAuth consent screen → Audience → Test users). Add the exact Google account that will sign in.
+  - Google Cloud project: `bevanrs-g-tasks-alt-ui`.
 - Authorized JS origins on the OAuth client: `https://bevanr.github.io` and `http://localhost:5173`.
 - Silent-refresh only (~weekly interactive re-auth). No refresh token.
 

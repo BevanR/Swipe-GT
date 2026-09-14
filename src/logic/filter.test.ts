@@ -15,6 +15,7 @@ function task(
     title: `Task ${id}`,
     due,
     status,
+    position: '',
   };
 }
 

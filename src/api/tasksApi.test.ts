@@ -44,10 +44,27 @@ describe('TasksApi.listTasks', () => {
       title: 'Renew passport',
       due: '2026-09-01',
       status: 'needsAction',
+      position: '00000000000000000000',
     });
 
     const nodate = tasks.find((t) => t.id === 'task-nodate-1')!;
     expect(nodate.due).toBeNull();
+  });
+
+  it('returns tasks sorted by position ascending even when the API returns them out of order', async () => {
+    // The @default fixture is deliberately stored out of position order.
+    const tasks = await makeApi().listTasks('@default', 'My Tasks');
+    // Sorted by their lexicographic `position` key (…0000, …0001, …0002).
+    expect(tasks.map((t) => t.id)).toEqual([
+      'task-overdue-1',
+      'task-today-1',
+      'task-nodate-1',
+    ]);
+    expect(tasks.map((t) => t.position)).toEqual([
+      '00000000000000000000',
+      '00000000000000000001',
+      '00000000000000000002',
+    ]);
   });
 
   it('includes notes when present and defaults taskListTitle to empty', async () => {

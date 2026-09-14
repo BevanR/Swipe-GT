@@ -18,6 +18,7 @@ interface GoogleTask {
   title?: string;
   due?: string;
   status?: 'needsAction' | 'completed';
+  position?: string;
   notes?: string;
 }
 
@@ -102,11 +103,15 @@ export class TasksApi {
           title: item.title ?? '',
           due: item.due ? item.due.slice(0, 10) : null,
           status: item.status ?? 'needsAction',
+          position: item.position ?? '',
           ...(item.notes != null ? { notes: item.notes } : {}),
         });
       }
       pageToken = data.nextPageToken;
     } while (pageToken);
+    // `tasks.list` is not guaranteed to be in position order, so sort explicitly
+    // by the lexicographic `position` key to reproduce the user's manual order.
+    out.sort((a, b) => (a.position < b.position ? -1 : a.position > b.position ? 1 : 0));
     return out;
   }
 
