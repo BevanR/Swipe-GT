@@ -75,6 +75,98 @@ describe('TasksApi.listTasks', () => {
   });
 });
 
+describe('TasksApi.insert', () => {
+  it('POSTs to the tasks endpoint with title + due datetime (notes omitted) and maps the created task', async () => {
+    let seenUrl: string | undefined;
+    let seenMethod: string | undefined;
+    let body: unknown;
+    server.use(
+      http.post(`${TASKS_API_BASE}/lists/:l/tasks`, async ({ request }) => {
+        seenUrl = request.url;
+        seenMethod = request.method;
+        body = await request.json();
+        return HttpResponse.json({
+          kind: 'tasks#task',
+          id: 'task-created-1',
+          title: 'Buy milk',
+          due: '2026-10-05T00:00:00.000Z',
+          position: '00000000000000000042',
+          status: 'needsAction',
+        });
+      }),
+    );
+
+    const created = await makeApi().insert(
+      '@default',
+      { title: 'Buy milk', due: '2026-10-05' },
+      'My Tasks',
+    );
+
+    expect(seenMethod).toBe('POST');
+    // The list id is URL-encoded like the other methods (@ → %40).
+    expect(seenUrl).toBe(`${TASKS_API_BASE}/lists/%40default/tasks`);
+    // due is converted to the RFC3339 datetime form; notes is omitted.
+    expect(body).toEqual({ title: 'Buy milk', due: '2026-10-05T00:00:00.000Z' });
+    expect(created).toEqual({
+      id: 'task-created-1',
+      taskListId: '@default',
+      taskListTitle: 'My Tasks',
+      title: 'Buy milk',
+      due: '2026-10-05', // sliced to date-only
+      status: 'needsAction',
+      position: '00000000000000000042',
+    });
+  });
+
+  it('omits due when not provided, defaults taskListTitle to empty, and maps position', async () => {
+    let body: unknown;
+    server.use(
+      http.post(`${TASKS_API_BASE}/lists/:l/tasks`, async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({
+          kind: 'tasks#task',
+          id: 'task-created-2',
+          title: 'No date task',
+          position: '00000000000000000001',
+          status: 'needsAction',
+        });
+      }),
+    );
+
+    const created = await makeApi().insert('@default', { title: 'No date task' });
+
+    expect(body).toEqual({ title: 'No date task' });
+    expect(created.due).toBeNull();
+    expect(created.taskListTitle).toBe('');
+    expect(created.position).toBe('00000000000000000001');
+  });
+
+  it('sends notes only when provided', async () => {
+    let body: unknown;
+    server.use(
+      http.post(`${TASKS_API_BASE}/lists/:l/tasks`, async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ id: 'x', title: 'With notes', status: 'needsAction' });
+      }),
+    );
+    await makeApi().insert('@default', { title: 'With notes', notes: 'remember this' });
+    expect(body).toEqual({ title: 'With notes', notes: 'remember this' });
+  });
+
+  it('inserts against the mock db and throws on non-2xx', async () => {
+    const api = makeApi();
+    const created = await api.insert('@default', { title: 'Live insert' });
+    expect(getMockTask('@default', created.id)?.title).toBe('Live insert');
+
+    server.use(
+      http.post(`${TASKS_API_BASE}/lists/:l/tasks`, () =>
+        HttpResponse.text('boom', { status: 500 }),
+      ),
+    );
+    await expect(makeApi().insert('@default', { title: 'nope' })).rejects.toThrow(/500/);
+  });
+});
+
 describe('TasksApi.patchDue', () => {
   it('PATCHes an RFC3339 datetime built from the date', async () => {
     let body: unknown;

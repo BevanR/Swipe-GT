@@ -108,6 +108,9 @@ export class AppRoot extends LitElement {
           ?fromCache=${s.fromCache}
           ?loading=${s.loading}
           .fetchedAt=${s.fetchedAt}
+          .lists=${s.lists}
+          .addTask=${(input: { taskListId: string; title: string; due?: string }) =>
+            this.controller.addTask(input)}
         ></task-list-view>`;
     }
   }

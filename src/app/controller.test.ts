@@ -38,6 +38,19 @@ function makeApi(initial: Task[]): ApiLike & { store: Task[] } {
     store,
     listTaskLists: vi.fn(async () => [{ id: 'l1', title: 'My Tasks' }]),
     listTasks: vi.fn(async () => store.map((t) => ({ ...t }))),
+    insert: vi.fn(async (listId: string, input: { title: string; due?: string }) => {
+      const created: Task = {
+        id: `new-${store.length + 1}`,
+        taskListId: listId,
+        taskListTitle: 'My Tasks',
+        title: input.title,
+        due: input.due ?? null,
+        status: 'needsAction',
+        position: '',
+      };
+      store.push(created);
+      return { ...created };
+    }),
     complete: vi.fn(async (_l: string, id: string) => {
       const i = store.findIndex((t) => t.id === id);
       if (i >= 0) store.splice(i, 1);
@@ -151,6 +164,60 @@ describe('AppController.snoozeTask', () => {
 
     expect(api.patchDue).toHaveBeenCalledWith('l1', 'a', localDate(3));
     expect(ctrl.state.grouped.overdue).toHaveLength(0);
+  });
+});
+
+describe('AppController.addTask', () => {
+  it('inserts the task then refetches so it appears in the right view', async () => {
+    const api = makeApi([task('a', localDate(0))]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    expect(api.listTasks).toHaveBeenCalledTimes(1);
+
+    await ctrl.addTask({ taskListId: 'l1', title: 'Buy milk' });
+
+    expect(api.insert).toHaveBeenCalledWith('l1', { title: 'Buy milk' });
+    // load + the refresh after insert.
+    expect(api.listTasks).toHaveBeenCalledTimes(2);
+    // No due date → shows in the no-date group of the default view.
+    expect(ctrl.state.grouped.noDate.map((t) => t.title)).toContain('Buy milk');
+  });
+
+  it('passes a due date through to insert (future task lands in allTasks)', async () => {
+    const api = makeApi([]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+
+    await ctrl.addTask({ taskListId: 'l1', title: 'Offsite', due: localDate(30) });
+
+    expect(api.insert).toHaveBeenCalledWith('l1', { title: 'Offsite', due: localDate(30) });
+    expect(ctrl.state.allTasks.map((t) => t.title)).toContain('Offsite');
+  });
+
+  it('surfaces an error and does not enqueue when offline', async () => {
+    const api = makeApi([]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    setOnline(false);
+
+    await expect(ctrl.addTask({ taskListId: 'l1', title: 'Nope' })).rejects.toThrow();
+
+    expect(api.insert).not.toHaveBeenCalled();
+    expect(ctrl.state.toast).toBeTruthy();
+    expect(await listMutations()).toHaveLength(0);
+  });
+
+  it('rejects and toasts on a real online error', async () => {
+    const api = makeApi([]);
+    api.insert = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+
+    await expect(ctrl.addTask({ taskListId: 'l1', title: 'Nope' })).rejects.toThrow();
+    expect(ctrl.state.toast).toBeTruthy();
+    expect(await listMutations()).toHaveLength(0);
   });
 });
 

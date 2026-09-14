@@ -84,6 +84,29 @@ export const handlers = [
     });
   }),
 
+  // POST a new task into a list
+  http.post(`${BASE}/lists/:listId/tasks`, async ({ request, params }) => {
+    const unauth = requireAuth(request);
+    if (unauth) return unauth;
+    const listId = params.listId as string;
+    const body = (await request.json()) as Partial<GoogleTaskResource>;
+    const id = `task-new-${(tasksByList[listId]?.length ?? 0) + 1}`;
+    const created: GoogleTaskResource = {
+      kind: 'tasks#task',
+      id,
+      etag: '"etag-new"',
+      title: body.title ?? '',
+      updated: '2026-09-14T12:00:00.000Z',
+      selfLink: `${BASE}/lists/${listId}/tasks/${id}`,
+      position: '00000000000000000099',
+      status: 'needsAction',
+      ...(typeof body.due === 'string' ? { due: body.due } : {}),
+      ...(typeof body.notes === 'string' ? { notes: body.notes } : {}),
+    };
+    (tasksByList[listId] ??= []).push(created);
+    return HttpResponse.json(created);
+  }),
+
   // PATCH a task (due date / completion)
   http.patch(`${BASE}/lists/:listId/tasks/:taskId`, async ({ request, params }) => {
     const unauth = requireAuth(request);

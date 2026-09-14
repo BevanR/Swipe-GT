@@ -1,8 +1,11 @@
 import { LitElement, css, html, nothing } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
-import type { GroupedTasks, Task, ViewName } from '../types';
+import { customElement, property, query } from 'lit/decorators.js';
+import { repeat } from 'lit/directives/repeat.js';
+import type { GroupedTasks, Task, TaskList, ViewName } from '../types';
 import { groupScheduled } from '../logic/scheduledGroups.js';
 import './task-card.js';
+import './add-task-dialog.js';
+import type { AddTaskDialog, AddTaskInput } from './add-task-dialog.js';
 
 interface ViewDef {
   key: ViewName;
@@ -180,6 +183,35 @@ export class TaskListView extends LitElement {
       margin: 0 0 4px;
       color: var(--app-on-surface);
     }
+    .fab {
+      position: fixed;
+      right: max(16px, env(safe-area-inset-right, 0px));
+      bottom: max(16px, calc(16px + env(safe-area-inset-bottom, 0px)));
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: none;
+      background: var(--app-accent);
+      color: #fff;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 3px 8px rgba(60, 64, 67, 0.35), 0 1px 3px rgba(60, 64, 67, 0.25);
+      z-index: 20;
+    }
+    .fab:hover {
+      background: color-mix(in srgb, var(--app-accent) 88%, #000);
+    }
+    .fab:focus-visible {
+      outline: 2px solid var(--app-accent);
+      outline-offset: 2px;
+    }
+    .fab svg {
+      width: 26px;
+      height: 26px;
+      fill: currentColor;
+    }
   `;
 
   @property({ attribute: false }) grouped: GroupedTasks = {
@@ -193,6 +225,20 @@ export class TaskListView extends LitElement {
   @property({ type: Boolean }) fromCache = false;
   @property({ type: Boolean }) loading = false;
   @property({ type: Number }) fetchedAt: number | null = null;
+  /** All lists (for the add-task list picker); filtered to included here. */
+  @property({ attribute: false }) lists: TaskList[] = [];
+  /** Async add-task handler wired to controller.addTask by the shell. */
+  @property({ attribute: false }) addTask?: (input: AddTaskInput) => Promise<void>;
+
+  @query('add-task-dialog') private addDialog?: AddTaskDialog;
+
+  private includedLists(): TaskList[] {
+    return this.lists.filter((l) => l.included);
+  }
+
+  private openAddDialog(): void {
+    this.addDialog?.show();
+  }
 
   /** Today's LOCAL calendar date as 'YYYY-MM-DD'. */
   private todayStr(): string {
@@ -322,16 +368,32 @@ export class TaskListView extends LitElement {
                   ${groups.map(
                     (g) => html`
                       <h2 class="grouphead">${g.label}</h2>
-                      ${g.tasks.map(
+                      ${repeat(
+                        g.tasks,
+                        (t) => t.id,
                         (t) => html`<task-card .task=${t}></task-card>`,
                       )}
                     `,
                   )}
                 </div>`
               : html`<div class="list">
-                  ${tasks.map((t) => html`<task-card .task=${t}></task-card>`)}
+                  ${repeat(
+                    tasks,
+                    (t) => t.id,
+                    (t) => html`<task-card .task=${t}></task-card>`,
+                  )}
                 </div>`}
         </main>
+
+        <button class="fab" aria-label="Add task" @click=${() => this.openAddDialog()}>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" />
+          </svg>
+        </button>
+        <add-task-dialog
+          .lists=${this.includedLists()}
+          .onSubmit=${this.addTask}
+        ></add-task-dialog>
       </div>
     `;
   }

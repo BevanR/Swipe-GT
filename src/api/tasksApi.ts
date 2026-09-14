@@ -115,6 +115,43 @@ export class TasksApi {
     return out;
   }
 
+  /**
+   * Create a new task in a list. Sends `title`, and `due`/`notes` only when
+   * provided; `due` is converted from a date-only string to the RFC3339
+   * datetime form Google expects. Returns the created task mapped to our
+   * {@link Task} shape (with `taskListId`/`taskListTitle` injected like
+   * {@link listTasks}).
+   */
+  async insert(
+    taskListId: string,
+    input: { title: string; due?: string; notes?: string },
+    taskListTitle?: string,
+  ): Promise<Task> {
+    const body = {
+      title: input.title,
+      ...(input.due != null ? { due: `${input.due}T00:00:00.000Z` } : {}),
+      ...(input.notes != null ? { notes: input.notes } : {}),
+    };
+    const res = await this.request(
+      `/lists/${encodeURIComponent(taskListId)}/tasks`,
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      },
+    );
+    const item = (await res.json()) as GoogleTask;
+    return {
+      id: item.id,
+      taskListId,
+      taskListTitle: taskListTitle ?? '',
+      title: item.title ?? '',
+      due: item.due ? item.due.slice(0, 10) : null,
+      status: item.status ?? 'needsAction',
+      position: item.position ?? '',
+      ...(item.notes != null ? { notes: item.notes } : {}),
+    };
+  }
+
   /** Patch a task's due date (RFC3339 date) — used to implement snooze. */
   async patchDue(taskListId: string, taskId: string, due: string): Promise<void> {
     await this.request(

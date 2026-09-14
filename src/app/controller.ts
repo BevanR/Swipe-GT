@@ -27,6 +27,11 @@ export interface AuthLike {
 export interface ApiLike {
   listTaskLists(): Promise<{ id: string; title: string }[]>;
   listTasks(taskListId: string, taskListTitle?: string): Promise<Task[]>;
+  insert(
+    taskListId: string,
+    input: { title: string; due?: string; notes?: string },
+    taskListTitle?: string,
+  ): Promise<Task>;
   patchDue(taskListId: string, taskId: string, due: string): Promise<void>;
   complete(taskListId: string, taskId: string): Promise<void>;
 }
@@ -241,6 +246,35 @@ export class AppController extends EventTarget {
         due,
         createdAt: Date.now(),
       });
+    }
+  }
+
+  /**
+   * Create a new task, then re-fetch so it lands in the correct view (default
+   * if due today/overdue/none, Scheduled if future). Requires connectivity and
+   * auth — offline add is out of scope, so we surface an error rather than
+   * enqueue. Rejects on failure so the caller (dialog) can stay open; a toast
+   * is shown for surfaced errors.
+   */
+  async addTask(input: { taskListId: string; title: string; due?: string }): Promise<void> {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      // Offline add is out of scope: do NOT enqueue; just tell the user.
+      this.showToast("Can't add a task while offline.");
+      throw new Error('offline');
+    }
+    try {
+      await this.api.insert(input.taskListId, {
+        title: input.title,
+        ...(input.due != null ? { due: input.due } : {}),
+      });
+      await this.refresh();
+    } catch (err) {
+      if (err instanceof SilentRenewFailedError) {
+        this.patch({ screen: 'connect', connectError: false });
+        throw err;
+      }
+      this.showToast('Could not add the task. Try again.');
+      throw err;
     }
   }
 
