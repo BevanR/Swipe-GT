@@ -1,4 +1,5 @@
 import { LitElement, css, html, nothing } from 'lit';
+import type { PropertyValues } from 'lit';
 import { customElement, property, query, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import type { GroupedTasks, Task, TaskList, ViewName } from '../types';
@@ -6,10 +7,12 @@ import { groupScheduled } from '../logic/scheduledGroups.js';
 import { scheduledDueDisplay } from '../logic/scheduledDueDisplay.js';
 import { partitionSearch } from '../logic/search.js';
 import type { SearchSections } from '../logic/search.js';
+import { nextId, resolveActingId } from '../logic/selection.js';
 import { NOW_EMPTY, SOMEDAY_EMPTY, pickEmpty } from './emptyMessages.js';
 import type { EmptyMessage } from './emptyMessages.js';
 import { navigate } from '../app/router.js';
 import './task-card.js';
+import type { TaskCard } from './task-card.js';
 
 interface ViewDef {
   key: ViewName;
@@ -334,6 +337,13 @@ export class TaskListView extends LitElement {
   @state() private searchOpen = false;
   /** The transient (never persisted) search query. */
   @state() private searchQuery = '';
+  /**
+   * The keyboard-selected task's id, or null when nothing is selected. Drives
+   * the per-card `selected` highlight and is the anchor for j/k navigation and
+   * the task-acting shortcuts (edit/complete/snooze). Reset when the view
+   * changes or the selected task leaves the visible set (see {@link willUpdate}).
+   */
+  @state() private selectedTaskId: string | null = null;
 
   private toggleSearch(): void {
     this.searchOpen = !this.searchOpen;
@@ -377,6 +387,133 @@ export class TaskListView extends LitElement {
         // Now: overdue first, then today, then no-date.
         return [...this.grouped.overdue, ...this.grouped.today, ...this.grouped.noDate];
     }
+  }
+
+  /**
+   * The tasks currently rendered, in exact top-to-bottom DOM order — the flat
+   * sequence keyboard navigation walks. Mirrors {@link render}'s branching:
+   *  - searching: the two sections, `inView` then `other`;
+   *  - `scheduled` (no search): the date buckets flattened in display order;
+   *  - otherwise: the flat view list.
+   */
+  private orderedVisibleTasks(): Task[] {
+    if (this.searchQuery.trim() !== '') {
+      const sections = partitionSearch(this.visibleTasks(), this.allTasks, this.searchQuery);
+      return [...sections.inView, ...sections.other];
+    }
+    if (this.view === 'scheduled') {
+      return this.futureGroups().flatMap((g) => g.tasks);
+    }
+    return this.visibleTasks();
+  }
+
+  /** The ids of {@link orderedVisibleTasks}, in display order. */
+  private visibleIds(): string[] {
+    return this.orderedVisibleTasks().map((t) => t.id);
+  }
+
+  /** The mounted <task-card> for `id`, or null when it isn't rendered. */
+  private cardFor(id: string | null): TaskCard | null {
+    if (id == null) return null;
+    const cards = this.renderRoot.querySelectorAll<TaskCard>('task-card');
+    for (const c of cards) if (c.task?.id === id) return c;
+    return null;
+  }
+
+  /**
+   * Keep the selection coherent as data/view changes: clear it on a view switch,
+   * and drop it if the selected task is no longer visible (completed elsewhere,
+   * filtered out by search, etc.). Runs before render so the highlight and
+   * scroll reflect the resolved selection.
+   */
+  protected willUpdate(changed: PropertyValues): void {
+    if (changed.has('view')) {
+      this.selectedTaskId = null;
+    }
+    if (this.selectedTaskId != null && !this.visibleIds().includes(this.selectedTaskId)) {
+      this.selectedTaskId = null;
+    }
+  }
+
+  /** Scroll the freshly-selected card into view (nearest edge, no jump). */
+  protected updated(changed: PropertyValues): void {
+    if (changed.has('selectedTaskId') && this.selectedTaskId != null) {
+      this.cardFor(this.selectedTaskId)?.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  // --- keyboard entry points (called by app-root's global key handler) ------
+
+  /** Open + focus the search box (the `/` shortcut). */
+  openSearchFromKeyboard(): void {
+    if (!this.searchOpen) this.searchOpen = true;
+    void this.updateComplete.then(() => this.searchInput?.focus());
+  }
+
+  /**
+   * Move the selection by `delta` down (+1) / up (-1) the visible list, clamping
+   * at the ends. With nothing selected (or an unknown selection) this lands on
+   * the first visible task.
+   */
+  moveSelection(delta: number): void {
+    this.selectedTaskId = nextId(this.visibleIds(), this.selectedTaskId, delta);
+  }
+
+  /** Edit the selected task (or the first visible one if none is selected). */
+  editSelected(): void {
+    const id = resolveActingId(this.visibleIds(), this.selectedTaskId);
+    if (id == null) return;
+    this.selectedTaskId = id;
+    const task = this.orderedVisibleTasks().find((t) => t.id === id);
+    if (task) navigate('edit', { listId: task.taskListId, taskId: task.id });
+  }
+
+  /**
+   * Complete the selected task (or the first visible one) through the card's
+   * normal complete path, so the in-gap Undo window still applies.
+   */
+  completeSelected(): void {
+    const id = resolveActingId(this.visibleIds(), this.selectedTaskId);
+    if (id == null) return;
+    this.selectedTaskId = id;
+    this.cardFor(id)?.completeFromKeyboard();
+  }
+
+  /** Open the snooze menu on the selected task (or the first visible one). */
+  snoozeSelected(): void {
+    const id = resolveActingId(this.visibleIds(), this.selectedTaskId);
+    if (id == null) return;
+    this.selectedTaskId = id;
+    this.cardFor(id)?.openSnoozeFromKeyboard();
+  }
+
+  /**
+   * Undo the most recent in-gap completion, if any card still holds one. Returns
+   * true when an undo fired (so the caller can decide whether to toast).
+   */
+  undoLast(): boolean {
+    const cards = this.renderRoot.querySelectorAll<TaskCard>('task-card');
+    for (const c of cards) {
+      if (c.hasPendingUndo) return c.undoFromKeyboard();
+    }
+    return false;
+  }
+
+  /**
+   * Escape on the list: close the search box if open, otherwise clear the
+   * selection. Returns true when it consumed the key.
+   */
+  handleEscape(): boolean {
+    if (this.searchOpen) {
+      this.searchQuery = '';
+      this.searchOpen = false;
+      return true;
+    }
+    if (this.selectedTaskId != null) {
+      this.selectedTaskId = null;
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -445,7 +582,11 @@ export class TaskListView extends LitElement {
               sections.inView,
               (t) => t.id,
               (t) =>
-                html`<task-card .task=${t} .somedayListId=${this.somedayListId}></task-card>`,
+                html`<task-card
+                  .task=${t}
+                  .somedayListId=${this.somedayListId}
+                  ?selected=${t.id === this.selectedTaskId}
+                ></task-card>`,
             )}
         ${sections.other.length > 0
           ? html`
@@ -454,7 +595,11 @@ export class TaskListView extends LitElement {
                 sections.other,
                 (t) => t.id,
                 (t) =>
-                  html`<task-card .task=${t} .somedayListId=${this.somedayListId}></task-card>`,
+                  html`<task-card
+                    .task=${t}
+                    .somedayListId=${this.somedayListId}
+                    ?selected=${t.id === this.selectedTaskId}
+                  ></task-card>`,
               )}
             `
           : nothing}
@@ -586,6 +731,7 @@ export class TaskListView extends LitElement {
                               .task=${t}
                               .somedayListId=${this.somedayListId}
                               .dueDisplay=${scheduledDueDisplay(g.key, t.due)}
+                              ?selected=${t.id === this.selectedTaskId}
                             ></task-card>`,
                         )}
                       `,
@@ -599,6 +745,7 @@ export class TaskListView extends LitElement {
                         html`<task-card
                           .task=${t}
                           .somedayListId=${this.somedayListId}
+                          ?selected=${t.id === this.selectedTaskId}
                         ></task-card>`,
                     )}
                   </div>`}

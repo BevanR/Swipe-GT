@@ -53,6 +53,18 @@ export class TaskCard extends LitElement {
       margin-bottom: var(--app-row-gap, 0);
       touch-action: pan-y;
     }
+    /* Keyboard selection highlight (desktop): a subtle tinted ground plus an
+       inset accent ring, drawn from existing tokens so it works in both themes.
+       Purely additive — pointer/swipe users never see it. */
+    :host([selected]) {
+      background: color-mix(in srgb, var(--app-accent) 10%, var(--app-surface));
+      box-shadow:
+        var(--app-row-shadow, none),
+        inset 0 0 0 2px var(--app-accent);
+    }
+    :host([selected]) .front {
+      background: transparent;
+    }
     /* Revealed action layers, behind the sliding front. They fill the row
        exactly; :host overflow:hidden clips them to the row. */
     .action {
@@ -290,6 +302,11 @@ export class TaskCard extends LitElement {
    * states the day, or an absolute date string for the range buckets.
    */
   @property({ attribute: false }) dueDisplay: DueDisplay = 'auto';
+  /**
+   * True when this row is the keyboard-selected task. Reflected to an attribute
+   * so the `:host([selected])` highlight applies; toggled by the list view.
+   */
+  @property({ type: Boolean, reflect: true }) selected = false;
 
   @state() private offset = 0;
   @state() private animating = false;
@@ -475,12 +492,51 @@ export class TaskCard extends LitElement {
   /** Undo tapped: cancel the window (if still pending) and spring back to rest. */
   private onUndo = (e: Event) => {
     e.stopPropagation();
-    if (!this.undo.cancel()) return;
+    this.cancelUndo();
+  };
+
+  /**
+   * Cancel a pending Complete (if the Undo window is still open) and spring the
+   * row back to rest. Returns true when an undo was actually performed. Shared
+   * by the on-screen Undo button and {@link undoFromKeyboard}.
+   */
+  private cancelUndo(): boolean {
+    if (!this.undo.cancel()) return false;
     this.undoPending = false;
     this.completing = false;
     this.animating = true;
     this.offset = 0;
-  };
+    return true;
+  }
+
+  // --- keyboard entry points (desktop shortcuts) ---------------------------
+
+  /** True while a Complete is held behind its Undo window (view queries this). */
+  get hasPendingUndo(): boolean {
+    return this.undoPending;
+  }
+
+  /**
+   * Complete this task via the SAME path as the on-screen circle / swipe, so the
+   * ~2s in-gap Undo window still applies. No-op if already completing or the
+   * snooze menu is open.
+   */
+  completeFromKeyboard(): void {
+    if (this.completing || this.snoozeOpen || this.undoPending) return;
+    this.animating = true;
+    this.flyOutAndComplete();
+  }
+
+  /** Open this card's snooze menu (same menu the left-swipe / button opens). */
+  openSnoozeFromKeyboard(): void {
+    if (this.snoozeOpen || this.undoPending) return;
+    this.openSnooze();
+  }
+
+  /** Trigger this card's pending Undo, if any. Returns true when it fired. */
+  undoFromKeyboard(): boolean {
+    return this.cancelUndo();
+  }
 
   /** The Undo window elapsed: collapse the row, then dispatch the completion. */
   private onUndoElapsed(): void {
