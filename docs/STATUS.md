@@ -98,13 +98,21 @@ scripts/
 
 ## Backlog (not yet built)
 
-- **Search** (deferred): client-side filter of the current view + a second "Other matches" section for matches outside the current view.
-- **Desktop view** (deferred, needs design): currently mobile-first; desktop layout is weak and should be designed deliberately, not patched. Includes: Disconnect button fonts missing on desktop.
-- **Per-list views** (deferred): view an individual task list.
+In-flight / next up (in order):
+- **Add-task route** — full-viewport route (`#/add`, hash routing) replacing the modal; due chosen from the snooze options + a "Pick a date" option (default No date); defaults to the Google default list.
+- **"Pick a date"** option in every postpone/snooze menu (native date input).
+- **Reduced-motion + snappy animations** — honor `prefers-reduced-motion`; make transitions fast/immediate.
+- **Edit-task route** — own full-viewport route (not inline), reusing the add-task routing.
+- **Undo in the gap** — the collapsed row holds an Undo for ~2s before collapsing (complete/snooze).
+- **Keyboard shortcuts** — add task, navigate views/lists, up/down tasks, postpone, complete, search, undo.
+
+Later / needs design:
 - **Drag-drop reorder** of no-date tasks (persist to Google via `move`).
-- **Undo button** in the row's collapse gap after complete/snooze (hold ~2s before collapsing).
+- **Desktop view** — broader deliberate design pass (mobile-first today; Inbox theme reads well on desktop).
 - **Star** — removed. The public Tasks API has no starred field; Google's native star uses a private API we can't use. Revisit only if Google exposes it publicly.
 - Dark-mode visual polish.
+
+Done since v1: relative/friendly dates, Scheduled bucketing, star removal, Inbox-theme fix, cog centering, add-task FAB (+ default list), snooze RHS button, mobile density, Material serif-font fix, broaden "Today", client-side search, Someday list + three-view model (Now/Scheduled/Someday), list name off cards.
 
 ## Testing notes
 

@@ -5,6 +5,8 @@ import type { GroupedTasks, Task, TaskList, ViewName } from '../types';
 import { groupScheduled } from '../logic/scheduledGroups.js';
 import { partitionSearch } from '../logic/search.js';
 import type { SearchSections } from '../logic/search.js';
+import { NOW_EMPTY, SOMEDAY_EMPTY, pickEmpty } from './emptyMessages.js';
+import type { EmptyMessage } from './emptyMessages.js';
 import './task-card.js';
 import './add-task-dialog.js';
 import type { AddTaskDialog, AddTaskInput } from './add-task-dialog.js';
@@ -217,17 +219,53 @@ export class TaskListView extends LitElement {
     }
     .empty {
       text-align: center;
-      padding: 64px 24px;
+      padding: 72px 24px;
       color: var(--app-on-surface-muted);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      animation: empty-in 0.42s cubic-bezier(0.2, 0.7, 0.3, 1) both;
     }
     .empty .big {
-      font-size: 2.5rem;
-      margin-bottom: 8px;
+      font-size: 3.5rem;
+      line-height: 1;
+      margin-bottom: 12px;
+      animation: empty-pop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
     }
     .empty h2 {
-      font-size: 1.1rem;
+      font-size: 1.15rem;
       margin: 0 0 4px;
       color: var(--app-on-surface);
+    }
+    .empty p {
+      margin: 0;
+      max-width: 22rem;
+    }
+    @keyframes empty-in {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: none;
+      }
+    }
+    @keyframes empty-pop {
+      from {
+        opacity: 0;
+        transform: scale(0.6);
+      }
+      to {
+        opacity: 1;
+        transform: none;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .empty,
+      .empty .big {
+        animation: none;
+      }
     }
     .fab {
       position: fixed;
@@ -338,28 +376,41 @@ export class TaskListView extends LitElement {
     }
   }
 
-  private emptyState(): { big: string; heading: string; body: string } {
-    switch (this.view) {
-      case 'scheduled':
-        return {
-          big: '📅',
-          heading: 'Nothing scheduled ahead',
-          body: 'Tasks due after today will appear here.',
-        };
-      case 'someday':
-        return {
-          big: '🗄️',
-          heading: 'Nothing here for someday',
-          body: 'Park dateless tasks here from the snooze menu.',
-        };
-      case 'now':
-      default:
-        return {
-          big: '✓',
-          heading: 'All clear',
-          body: 'Nothing due today or overdue. Inbox zero.',
-        };
+  /**
+   * The cheerful empty-state variant currently on show, plus the view it was
+   * picked for. Plain (non-reactive) fields: read during render, never assigned
+   * in a way that should re-render. A fresh variant is chosen when the empty
+   * view first appears and whenever the view changes (see `pickEmptyFor`), so
+   * it stays stable across unrelated re-renders (banners, loading spinner).
+   */
+  private emptyPick: EmptyMessage | undefined;
+  private emptyPickView: ViewName | undefined;
+
+  /**
+   * The empty-state message for `view`. Now and Someday get a fresh, varied
+   * cheerful message; Scheduled keeps its single fixed line. The pick is cached
+   * per view and only re-rolled when the view changes or after the list has
+   * been non-empty (`resetEmptyPick`), so it doesn't reshuffle every render.
+   */
+  private pickEmptyFor(view: ViewName): EmptyMessage {
+    if (view === 'scheduled') {
+      return {
+        emoji: '📅',
+        title: 'Nothing scheduled ahead',
+        subtitle: 'Tasks due after today will appear here.',
+      };
     }
+    if (!this.emptyPick || this.emptyPickView !== view) {
+      this.emptyPick = pickEmpty(view === 'someday' ? SOMEDAY_EMPTY : NOW_EMPTY);
+      this.emptyPickView = view;
+    }
+    return this.emptyPick;
+  }
+
+  /** Forget the cached pick so the next empty view rolls a fresh variant. */
+  private resetEmptyPick(): void {
+    this.emptyPick = undefined;
+    this.emptyPickView = undefined;
   }
 
   private cacheLabel(): string {
@@ -377,6 +428,21 @@ export class TaskListView extends LitElement {
   /** Future tasks grouped into date buckets for the Scheduled view. */
   private futureGroups() {
     return groupScheduled(this.scheduled, new Date());
+  }
+
+  /**
+   * The friendly empty state: a big decorative emoji, a bold title, and a muted
+   * subtitle, centered. The emoji is aria-hidden (decorative); the title and
+   * subtitle carry the message as real text. Now/Someday get a varied cheerful
+   * variant; Scheduled keeps its fixed line.
+   */
+  private renderEmpty() {
+    const msg = this.pickEmptyFor(this.view);
+    return html`<div class="empty" role="status">
+      <div class="big" aria-hidden="true">${msg.emoji}</div>
+      <h2>${msg.title}</h2>
+      <p>${msg.subtitle}</p>
+    </div>`;
   }
 
   /** The two-section result list shown while a search query is active. */
@@ -409,8 +475,13 @@ export class TaskListView extends LitElement {
 
   render() {
     const tasks = this.visibleTasks();
-    const empty = this.emptyState();
     const searching = this.searchQuery.trim() !== '';
+    // The empty state only shows when not searching and the view has no tasks.
+    // Whenever that's not the case, forget the cached pick so the next time the
+    // empty view appears it rolls a fresh, cheerful variant.
+    if (searching || tasks.length > 0) {
+      this.resetEmptyPick();
+    }
     const groups = !searching && this.view === 'scheduled' ? this.futureGroups() : [];
     const sections = searching
       ? partitionSearch(tasks, this.allTasks, this.searchQuery)
@@ -518,11 +589,7 @@ export class TaskListView extends LitElement {
           ${sections
             ? this.renderSearchResults(sections)
             : tasks.length === 0
-              ? html`<div class="empty">
-                  <div class="big" aria-hidden="true">${empty.big}</div>
-                  <h2>${empty.heading}</h2>
-                  <p>${empty.body}</p>
-                </div>`
+              ? this.renderEmpty()
               : this.view === 'scheduled'
                 ? html`<div class="list">
                     ${groups.map(
