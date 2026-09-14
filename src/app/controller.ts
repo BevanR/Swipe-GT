@@ -9,11 +9,10 @@ import {
 import { drainQueue, enqueueMutation } from '../pwa/offlineQueue';
 import { filterAndGroup } from '../logic/filter';
 import type {
-  GroupedTasks,
   Task,
-  TaskGroupKey,
   TaskList,
   ThemeName,
+  ViewName,
 } from '../types';
 import { EMPTY_GROUPS, initialState, type AppState } from './state';
 
@@ -35,7 +34,6 @@ export interface ApiLike {
 /** Remembers where a task lived so an online failure can roll it back in. */
 interface RemovedTask {
   task: Task;
-  group: TaskGroupKey;
   index: number;
 }
 
@@ -76,7 +74,11 @@ export class AppController extends EventTarget {
   async boot(): Promise<void> {
     const cfg = await getConfig();
     this.applyTheme(cfg.theme);
-    this.patch({ theme: cfg.theme });
+    this.patch({
+      theme: cfg.theme,
+      view: cfg.view,
+      starredIds: cfg.starredTaskIds,
+    });
     this.wireRefreshTriggers();
 
     if (await this.auth.isConnected()) {
@@ -105,6 +107,7 @@ export class AppController extends EventTarget {
     this.patch({
       screen: 'connect',
       grouped: EMPTY_GROUPS,
+      allTasks: [],
       lists: [],
       fetchedAt: null,
       fromCache: false,
@@ -128,12 +131,12 @@ export class AppController extends EventTarget {
         tasks.push(...listTasks);
       }
 
-      const grouped = filterAndGroup(tasks);
       const fetchedAt = Date.now();
       await setSnapshot({ fetchedAt, tasks, lists });
 
       this.patch({
-        grouped,
+        allTasks: tasks,
+        grouped: filterAndGroup(tasks),
         lists,
         fetchedAt,
         fromCache: false,
@@ -162,6 +165,7 @@ export class AppController extends EventTarget {
     if (offline && snapshot) {
       this.patch({
         screen: this._state.screen === 'connect' ? 'list' : this._state.screen,
+        allTasks: snapshot.tasks,
         grouped: filterAndGroup(snapshot.tasks),
         lists: snapshot.lists,
         fetchedAt: snapshot.fetchedAt,
@@ -262,33 +266,25 @@ export class AppController extends EventTarget {
     this.showToast('Something went wrong. Try again.');
   }
 
-  /** Remove a task from whichever group holds it; return where it was. */
+  /** Remove a task from the fetched set; return where it was for rollback. */
   private removeTask(taskId: string): RemovedTask | null {
-    const groups: TaskGroupKey[] = ['overdue', 'today', 'noDate'];
-    const next: GroupedTasks = {
-      overdue: [...this._state.grouped.overdue],
-      today: [...this._state.grouped.today],
-      noDate: [...this._state.grouped.noDate],
-    };
-    for (const group of groups) {
-      const idx = next[group].findIndex((t) => t.id === taskId);
-      if (idx !== -1) {
-        const [task] = next[group].splice(idx, 1);
-        this.patch({ grouped: next });
-        return { task, group, index: idx };
-      }
-    }
-    return null;
+    const idx = this._state.allTasks.findIndex((t) => t.id === taskId);
+    if (idx === -1) return null;
+    const next = [...this._state.allTasks];
+    const [task] = next.splice(idx, 1);
+    this.setTasks(next);
+    return { task, index: idx };
   }
 
   private restoreTask(removed: RemovedTask): void {
-    const next: GroupedTasks = {
-      overdue: [...this._state.grouped.overdue],
-      today: [...this._state.grouped.today],
-      noDate: [...this._state.grouped.noDate],
-    };
-    next[removed.group].splice(removed.index, 0, removed.task);
-    this.patch({ grouped: next });
+    const next = [...this._state.allTasks];
+    next.splice(removed.index, 0, removed.task);
+    this.setTasks(next);
+  }
+
+  /** Set the fetched task set and keep the derived grouping in sync. */
+  private setTasks(tasks: Task[]): void {
+    this.patch({ allTasks: tasks, grouped: filterAndGroup(tasks) });
   }
 
   // --- refresh triggers ----------------------------------------------------
@@ -331,6 +327,26 @@ export class AppController extends EventTarget {
     this.applyTheme(theme);
     this.patch({ theme });
     await setConfig({ theme });
+  }
+
+  /** Switch the display view and persist the choice. */
+  async setView(view: ViewName): Promise<void> {
+    if (this._state.view === view) return;
+    this.patch({ view });
+    await setConfig({ view });
+  }
+
+  /**
+   * Toggle a task's local star (the Tasks API has no star field). Persists the
+   * full starred-id list and updates state for an instant UI response.
+   */
+  async toggleStar(taskId: string): Promise<void> {
+    const has = this._state.starredIds.includes(taskId);
+    const starredIds = has
+      ? this._state.starredIds.filter((id) => id !== taskId)
+      : [...this._state.starredIds, taskId];
+    this.patch({ starredIds });
+    await setConfig({ starredTaskIds: starredIds });
   }
 
   async setInclusion(listId: string, included: boolean): Promise<void> {

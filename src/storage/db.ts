@@ -10,6 +10,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   listInclusion: {},
   theme: 'inbox',
   auth: null,
+  starredTaskIds: [],
+  view: 'default',
 };
 
 const DB_NAME = 'g-tasks';

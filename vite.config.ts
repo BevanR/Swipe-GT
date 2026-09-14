@@ -54,8 +54,8 @@ export default defineConfig({
         ],
       },
       manifest: {
-        name: 'Google Tasks Swipe',
-        short_name: 'Tasks Swipe',
+        name: 'Swipe GT',
+        short_name: 'Swipe GT',
         description: 'Swipe through your Google Tasks that are due today or overdue.',
         theme_color: '#1a73e8',
         background_color: '#ffffff',

@@ -2,7 +2,7 @@ import { LitElement, css, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { AppController } from '../app/controller';
 import type { AppState } from '../app/state';
-import type { Task, ThemeName } from '../types';
+import type { Task, ThemeName, ViewName } from '../types';
 import './connect-screen.js';
 import './task-list-view.js';
 import './settings-screen.js';
@@ -75,6 +75,9 @@ export class AppRoot extends LitElement {
           void this.controller.completeTask(e.detail.task)}
         @task-snooze=${(e: CustomEvent<{ task: Task; due: string }>) =>
           void this.controller.snoozeTask(e.detail.task, e.detail.due)}
+        @task-star=${(e: CustomEvent<{ taskId: string }>) =>
+          void this.controller.toggleStar(e.detail.taskId)}
+        @set-view=${(e: CustomEvent<ViewName>) => void this.controller.setView(e.detail)}
       >
         ${this.renderScreen(s)}
       </div>
@@ -101,6 +104,9 @@ export class AppRoot extends LitElement {
       default:
         return html`<task-list-view
           .grouped=${s.grouped}
+          .allTasks=${s.allTasks}
+          .starredIds=${s.starredIds}
+          .view=${s.view}
           ?offline=${s.offline}
           ?fromCache=${s.fromCache}
           ?loading=${s.loading}

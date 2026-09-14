@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppController, type ApiLike, type AuthLike } from './controller';
-import { _resetDbForTests, listMutations } from '../storage/db';
+import { _resetDbForTests, getConfig, listMutations, setConfig } from '../storage/db';
 import type { Task } from '../types';
 
 function localDate(offsetDays: number): string {
@@ -160,5 +160,54 @@ describe('AppController.boot', () => {
     const ctrl = new AppController({ auth, api: makeApi([]) });
     await ctrl.boot();
     expect(ctrl.state.screen).toBe('connect');
+  });
+
+  it('restores the persisted view and starred ids from config', async () => {
+    await setConfig({ view: 'future', starredTaskIds: ['x', 'y'] });
+    const auth = makeAuth();
+    auth.isConnected = vi.fn(async () => false);
+    const ctrl = new AppController({ auth, api: makeApi([]) });
+    await ctrl.boot();
+    expect(ctrl.state.view).toBe('future');
+    expect(ctrl.state.starredIds).toEqual(['x', 'y']);
+  });
+});
+
+describe('AppController.toggleStar', () => {
+  it('adds then removes a star and persists it', async () => {
+    const ctrl = new AppController({ auth: makeAuth(), api: makeApi([]) });
+
+    await ctrl.toggleStar('t1');
+    expect(ctrl.state.starredIds).toEqual(['t1']);
+    expect((await getConfig()).starredTaskIds).toEqual(['t1']);
+
+    await ctrl.toggleStar('t1');
+    expect(ctrl.state.starredIds).toEqual([]);
+    expect((await getConfig()).starredTaskIds).toEqual([]);
+  });
+});
+
+describe('AppController.setView', () => {
+  it('switches and persists the view; keeps allTasks for filtering', async () => {
+    const api = makeApi([
+      task('overdue', localDate(-1)),
+      task('today', localDate(0)),
+      task('future', localDate(3)),
+    ]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+
+    // The full fetched set (incl. the future task) is retained for the
+    // starred/future views, even though it is filtered out of `grouped`.
+    expect(ctrl.state.allTasks.map((t) => t.id).sort()).toEqual([
+      'future',
+      'overdue',
+      'today',
+    ]);
+    expect(ctrl.state.grouped.overdue.map((t) => t.id)).toEqual(['overdue']);
+
+    await ctrl.setView('future');
+    expect(ctrl.state.view).toBe('future');
+    expect((await getConfig()).view).toBe('future');
   });
 });

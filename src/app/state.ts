@@ -1,4 +1,4 @@
-import type { GroupedTasks, TaskList, ThemeName } from '../types';
+import type { GroupedTasks, Task, TaskList, ThemeName, ViewName } from '../types';
 
 /** Which top-level screen the app is showing. */
 export type Screen = 'loading' | 'connect' | 'list' | 'settings';
@@ -6,7 +6,14 @@ export type Screen = 'loading' | 'connect' | 'list' | 'settings';
 /** The complete, serializable UI state owned by the controller. */
 export interface AppState {
   screen: Screen;
+  /** Overdue/today/no-date grouping of the fetched set (drives the default view). */
   grouped: GroupedTasks;
+  /** Every fetched non-completed task on included lists (drives starred/future/search). */
+  allTasks: Task[];
+  /** The active display view. */
+  view: ViewName;
+  /** Locally-starred task ids. */
+  starredIds: string[];
   /** Task lists from the most recent tasklists.list (for the settings screen). */
   lists: TaskList[];
   theme: ThemeName;
@@ -32,6 +39,9 @@ export function initialState(theme: ThemeName): AppState {
   return {
     screen: 'loading',
     grouped: EMPTY_GROUPS,
+    allTasks: [],
+    view: 'default',
+    starredIds: [],
     lists: [],
     theme,
     fromCache: false,

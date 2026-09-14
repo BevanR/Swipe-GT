@@ -5,6 +5,7 @@ import '@material/web/list/list.js';
 import '@material/web/list/list-item.js';
 import '@material/web/button/text-button.js';
 import type { SnoozeOption } from '../types';
+import { formatDueLabel } from '../logic/dueLabel';
 import type { MdDialog } from '@material/web/dialog/dialog.js';
 
 /**
@@ -80,7 +81,7 @@ export class SnoozeMenu extends LitElement {
               <md-list-item
                 type="button"
                 role="menuitem"
-                aria-label=${`Snooze until ${opt.label}, ${opt.date}`}
+                aria-label=${`Snooze until ${opt.label}, ${formatDueLabel(opt.date)}`}
                 @click=${() => this.pick(opt)}
                 @keydown=${(e: KeyboardEvent) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -90,7 +91,7 @@ export class SnoozeMenu extends LitElement {
                 }}
               >
                 <span slot="headline">${opt.label}</span>
-                <span slot="supporting-text" class="date">${opt.date}</span>
+                <span slot="supporting-text" class="date">${formatDueLabel(opt.date)}</span>
               </md-list-item>
             `,
           )}

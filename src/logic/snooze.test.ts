@@ -186,3 +186,34 @@ describe('computeSnoozeOptions — defaults', () => {
     }
   });
 });
+
+describe('computeSnoozeOptions — Today option (overdue only)', () => {
+  it('is absent when opts is omitted', () => {
+    expect(keys(computeSnoozeOptions(WED))).not.toContain('today');
+  });
+
+  it('is absent when opts.overdue is false', () => {
+    expect(keys(computeSnoozeOptions(WED, { overdue: false }))).not.toContain('today');
+  });
+
+  it('is prepended (first) with today’s date when opts.overdue is true', () => {
+    const opts = computeSnoozeOptions(WED, { overdue: true }); // Wed 2026-06-03
+    expect(opts[0].key).toBe('today');
+    expect(opts[0].label).toBe('Today');
+    expect(opts[0].date).toBe('2026-06-03');
+    // The rest of the menu is unchanged.
+    expect(keys(opts)).toEqual([
+      'today',
+      'tomorrow',
+      'laterThisWeek',
+      'thisWeekend',
+      'nextWeek',
+      'nextMonth',
+    ]);
+  });
+
+  it('uses the correct local date on a Friday', () => {
+    const opts = computeSnoozeOptions(FRI, { overdue: true }); // Fri 2026-06-05
+    expect(byKey(opts).today).toBe('2026-06-05');
+  });
+});

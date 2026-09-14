@@ -31,6 +31,9 @@
   --app-snooze: #f4b400;
   --app-snooze-on: #202124;
   --app-danger: #d93025;
+  --app-warning: #c8560a;
+  --app-warning-accent: #ef6c00;
+  --app-star: #f4b400;
   --app-checkbox-border: #5f6368;
   --app-font: 'Roboto', system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
   --app-list-gap: 10px;
@@ -55,8 +58,12 @@
   --app-section-size: 0.72rem;
   --app-accent: #1a73e8;
   --app-complete: #0f9d58;
+  --app-complete-on: #ffffff;
   --app-snooze: #f4b400;
   --app-snooze-on: #202124;
+  --app-warning: #c8560a;
+  --app-warning-accent: #ef6c00;
+  --app-star: #f4b400;
   --app-list-gap: 10px;
   --app-group-gap: 22px;
   --app-checkbox-display: none;
@@ -85,10 +92,13 @@
   --app-section-spacing: 0;
   --app-section-size: 0.8rem;
   --app-accent: #1a73e8;
-  --app-complete: #1a73e8;
+  --app-complete: #0f9d58;
   --app-complete-on: #ffffff;
   --app-snooze: #f4b400;
   --app-snooze-on: #202124;
+  --app-warning: #b45309;
+  --app-warning-accent: #ef6c00;
+  --app-star: #f4b400;
   --app-checkbox-border: #1a73e8;
   --app-list-gap: 0px;
   --app-group-gap: 14px;
@@ -115,6 +125,8 @@
     --app-border: #3c4043;
     --app-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
     --app-section-color: #9aa0a6;
+    --app-warning: #fdb022;
+    --app-warning-accent: #fb8c00;
     --md-sys-color-surface: #2d2e31;
     --md-sys-color-on-surface: #e8eaed;
     --md-sys-color-surface-container-high: #2d2e31;
@@ -129,6 +141,8 @@
     --app-header-bg: #2d2e31;
     --app-border: #3c4043;
     --app-section-color: #8ab4f8;
+    --app-warning: #fdb022;
+    --app-warning-accent: #fb8c00;
     --md-sys-color-surface: #2d2e31;
     --md-sys-color-on-surface: #e8eaed;
     --md-sys-color-surface-container-high: #2d2e31;

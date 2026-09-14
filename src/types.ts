@@ -21,6 +21,16 @@ export interface TaskList {
 
 export type ThemeName = 'inbox' | 'tasks';
 
+/**
+ * Which display view the list is showing. All three views render the same flat
+ * card list from the already-fetched task set; they only differ in how tasks are
+ * filtered at display time:
+ *  - `default`: overdue + today + no-date (via filterAndGroup).
+ *  - `starred`: only locally-starred tasks, any due date.
+ *  - `future`:  tasks due strictly after today, sorted ascending.
+ */
+export type ViewName = 'default' | 'starred' | 'future';
+
 export interface AuthState {
   accessToken: string;
   accessTokenExpiry: number; // epoch ms
@@ -30,6 +40,10 @@ export interface AppConfig {
   listInclusion: Record<string, boolean>; // taskListId -> included; absent id defaults to true
   theme: ThemeName;
   auth: AuthState | null;
+  /** Task ids the user has starred locally (the Tasks API has no star field). */
+  starredTaskIds: string[];
+  /** The persisted display view. */
+  view: ViewName;
 }
 
 export type TaskGroupKey = 'overdue' | 'today' | 'noDate';
@@ -41,6 +55,7 @@ export interface GroupedTasks {
 }
 
 export type SnoozeOptionKey =
+  | 'today'
   | 'tomorrow'
   | 'laterThisWeek'
   | 'thisWeekend'

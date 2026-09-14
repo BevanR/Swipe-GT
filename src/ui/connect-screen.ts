@@ -76,7 +76,7 @@ export class ConnectScreen extends LitElement {
         <div class="mark" aria-hidden="true">
           <svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z" /></svg>
         </div>
-        <h1>Google Tasks Swipe</h1>
+        <h1>Swipe GT</h1>
         <p>
           Swipe through the tasks you have due today or overdue. Swipe right to complete, left to
           snooze.
