@@ -1,6 +1,7 @@
 import { LitElement, css, html, nothing } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import type { GroupedTasks, Task, ViewName } from '../types';
+import { groupScheduled } from '../logic/scheduledGroups.js';
 import './task-card.js';
 
 interface ViewDef {
@@ -153,6 +154,18 @@ export class TaskListView extends LitElement {
       display: flex;
       flex-direction: column;
     }
+    .grouphead {
+      margin: 0;
+      padding: 16px 16px 6px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--app-on-surface-muted);
+    }
+    .grouphead:first-child {
+      padding-top: 8px;
+    }
     .empty {
       text-align: center;
       padding: 64px 24px;
@@ -229,9 +242,15 @@ export class TaskListView extends LitElement {
     );
   }
 
+  /** Future tasks grouped into date buckets for the Scheduled view. */
+  private futureGroups() {
+    return groupScheduled(this.visibleTasks(), new Date());
+  }
+
   render() {
     const tasks = this.visibleTasks();
     const empty = this.emptyState();
+    const groups = this.view === 'future' ? this.futureGroups() : [];
     return html`
       <div class="wrap">
         <header>
@@ -298,9 +317,20 @@ export class TaskListView extends LitElement {
                 <h2>${empty.heading}</h2>
                 <p>${empty.body}</p>
               </div>`
-            : html`<div class="list">
-                ${tasks.map((t) => html`<task-card .task=${t}></task-card>`)}
-              </div>`}
+            : this.view === 'future'
+              ? html`<div class="list">
+                  ${groups.map(
+                    (g) => html`
+                      <h2 class="grouphead">${g.label}</h2>
+                      ${g.tasks.map(
+                        (t) => html`<task-card .task=${t}></task-card>`,
+                      )}
+                    `,
+                  )}
+                </div>`
+              : html`<div class="list">
+                  ${tasks.map((t) => html`<task-card .task=${t}></task-card>`)}
+                </div>`}
         </main>
       </div>
     `;

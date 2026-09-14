@@ -7,7 +7,7 @@
  */
 
 /** Full weekday names indexed by `Date.prototype.getDay()` (0 = Sunday). */
-const WEEKDAYS = [
+export const WEEKDAYS = [
   'Sunday',
   'Monday',
   'Tuesday',
