@@ -123,6 +123,37 @@ export class TaskCard extends LitElement {
       border-color: var(--app-complete);
       color: #fff;
     }
+    /* Explicit snooze button on the right of the row — always visible so desktop
+       (no swipe) users can reach the same snooze menu the left-swipe opens.
+       Mirrors the icon-button pattern (muted, hover background, accent focus)
+       and is themed via tokens, so it works in both the inbox and tasks themes. */
+    .snoozebtn {
+      appearance: none;
+      flex: none;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      color: var(--app-on-surface-muted);
+      cursor: pointer;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .snoozebtn:hover {
+      background: color-mix(in srgb, var(--app-on-surface) 8%, transparent);
+    }
+    .snoozebtn:focus-visible {
+      outline: 2px solid var(--app-accent);
+      outline-offset: 2px;
+    }
+    .snoozebtn svg {
+      width: 22px;
+      height: 22px;
+      fill: currentColor;
+    }
     .body {
       min-width: 0;
       flex: 1;
@@ -315,6 +346,13 @@ export class TaskCard extends LitElement {
     window.setTimeout(dispatch, 220);
   }
 
+  /** Explicit snooze button (desktop-friendly): same path as a left-swipe commit. */
+  private onSnoozeButton = (e: Event) => {
+    e.stopPropagation();
+    if (this.snoozeOpen) return;
+    this.openSnooze();
+  };
+
   private openSnooze(): void {
     // Spring the card back to rest, then raise the menu.
     this.offset = 0;
@@ -395,6 +433,19 @@ export class TaskCard extends LitElement {
           </div>
           ${this.task?.notes ? html`<div class="notes">${this.task.notes}</div>` : ''}
         </div>
+        <button
+          class="snoozebtn"
+          type="button"
+          aria-label="Snooze task"
+          @pointerdown=${this.stopDrag}
+          @click=${this.onSnoozeButton}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M22 5.72l-4.6-3.86-1.29 1.53 4.6 3.86L22 5.72zM7.88 3.39L6.6 1.86 2 5.71l1.29 1.53 4.59-3.85zM12.5 8H11v6l4.75 2.85.75-1.23-4-2.37V8zM12 4c-4.97 0-9 4.03-9 9s4.02 9 9 9c4.97 0 9-4.03 9-9s-4.03-9-9-9zm0 16c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"
+            />
+          </svg>
+        </button>
       </div>
       <snooze-menu
         .options=${this.snoozeOptions}

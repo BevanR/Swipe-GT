@@ -152,6 +152,9 @@ export class TaskListView extends LitElement {
       /* Rows stay full-bleed (edge-to-edge). Vertical padding is theme-driven so
          the Inbox theme can give its elevated cards a little breathing room. */
       padding: var(--app-list-pad, 0);
+      /* Leave room to scroll the last row's snooze button clear of the fixed FAB
+         (56px + 16px inset). Longhand wins over the shorthand above. */
+      padding-bottom: max(88px, calc(88px + env(safe-area-inset-bottom, 0px)));
     }
     .list {
       display: flex;
