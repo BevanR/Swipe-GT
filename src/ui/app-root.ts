@@ -3,12 +3,14 @@ import { customElement, property, state } from 'lit/decorators.js';
 import type { AppController } from '../app/controller';
 import type { AppState } from '../app/state';
 import type { Task, ThemeName, ViewName } from '../types';
-import { currentRoute } from '../app/router.js';
+import { currentRoute, navigate } from '../app/router.js';
 import type { Route } from '../app/router.js';
+import type { TaskUpdateChanges } from '../app/controller';
 import './connect-screen.js';
 import './task-list-view.js';
 import './settings-screen.js';
 import './add-task-screen.js';
+import './edit-task-screen.js';
 
 /**
  * Top-level shell. Subscribes to the controller's state and renders the current
@@ -89,6 +91,8 @@ export class AppRoot extends LitElement {
           void this.controller.snoozeTask(e.detail.task, e.detail.due)}
         @task-someday=${(e: CustomEvent<{ task: Task }>) =>
           void this.controller.moveToSomeday(e.detail.task)}
+        @task-open=${(e: CustomEvent<{ task: Task }>) =>
+          navigate('edit', { listId: e.detail.task.taskListId, taskId: e.detail.task.id })}
         @set-view=${(e: CustomEvent<ViewName>) => void this.controller.setView(e.detail)}
       >
         ${this.renderScreen(s)}
@@ -124,6 +128,22 @@ export class AppRoot extends LitElement {
             .onSubmit=${(input: { taskListId: string; title: string; due?: string }) =>
               this.controller.addTask(input)}
           ></add-task-screen>`;
+        }
+        if (this.route.name === 'edit') {
+          const { listId, taskId } = this.route.params;
+          const task = s.allTasks.find((t) => t.taskListId === listId && t.id === taskId);
+          if (task) {
+            return html`<edit-task-screen
+              .task=${task}
+              .lists=${s.lists}
+              .onSave=${(changes: TaskUpdateChanges) =>
+                this.controller.updateTask(task, changes)}
+              .onDelete=${() => this.controller.deleteTask(task)}
+            ></edit-task-screen>`;
+          }
+          // Stale/deep-linked hash to a task we don't hold (e.g. it was completed
+          // elsewhere): drop back to the list rather than render an empty editor.
+          navigate('list');
         }
         return html`<task-list-view
           .grouped=${s.grouped}

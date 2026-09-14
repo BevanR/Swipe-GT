@@ -35,12 +35,34 @@ export interface ApiLike {
   patchDue(taskListId: string, taskId: string, due: string): Promise<void>;
   complete(taskListId: string, taskId: string): Promise<void>;
   clearDue(taskListId: string, taskId: string): Promise<void>;
+  updateTask(
+    taskListId: string,
+    taskId: string,
+    changes: { title?: string; notes?: string; due?: string },
+    taskListTitle?: string,
+  ): Promise<Task>;
+  deleteTask(taskListId: string, taskId: string): Promise<void>;
   move(
     taskListId: string,
     taskId: string,
     destinationTasklist: string,
     destinationTitle?: string,
   ): Promise<Task>;
+}
+
+/**
+ * The field changes the Edit screen asks the controller to apply. Every field is
+ * optional so unchanged fields are omitted:
+ *  - `title` / `notes`: a new string value (notes may be `''`).
+ *  - `due`: a 'YYYY-MM-DD' string to set the date, or `null` to CLEAR it (which
+ *    is applied via {@link ApiLike.clearDue}); omitted means "leave the date".
+ *  - `listId`: the destination list id when the task should MOVE lists.
+ */
+export interface TaskUpdateChanges {
+  title?: string;
+  notes?: string;
+  due?: string | null;
+  listId?: string;
 }
 
 /** Remembers where a task lived so an online failure can roll it back in. */
@@ -318,6 +340,100 @@ export class AppController extends EventTarget {
         throw err;
       }
       this.showToast('Could not add the task. Try again.');
+      throw err;
+    }
+  }
+
+  /**
+   * Apply the Edit screen's changes to a task, then re-fetch so the list reflects
+   * them. Not optimistic: the Edit screen is a separate full-viewport screen, so
+   * there is no in-list card to animate; the underlying list simply updates on
+   * the follow-up refresh.
+   *
+   * Order — patch scalar fields FIRST, then move (task id is preserved across a
+   * move, so the move still targets the same task). A move is the only operation
+   * Google rejects for recurring tasks; because the field patches already
+   * succeeded by then, a recurring-move rejection is treated as a PARTIAL
+   * success: we keep the applied title/notes/due changes and only tell the user
+   * the move could not happen (rolling those patches back would need a second
+   * round-trip and risks its own failure). Clearing the due date reuses the
+   * dedicated {@link ApiLike.clearDue} (PATCH due:null).
+   *
+   * Offline editing is out of scope (like add/someday): we toast and do NOT
+   * enqueue. Rejects on a hard failure so the Edit screen can stay open; a
+   * recurring-move rejection resolves (the field changes stuck) so the screen
+   * closes back to the list.
+   */
+  async updateTask(original: Task, changes: TaskUpdateChanges): Promise<void> {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      // Offline edit is out of scope: do NOT enqueue; just tell the user.
+      this.showToast("Can't save changes while offline");
+      throw new Error('offline');
+    }
+    const movingList = changes.listId != null && changes.listId !== original.taskListId;
+    const destTitle = movingList
+      ? this._state.lists.find((l) => l.id === changes.listId)?.title
+      : undefined;
+    try {
+      // 1. Patch the scalar fields (title/notes and a date being SET) together.
+      const patch: { title?: string; notes?: string; due?: string } = {};
+      if (changes.title !== undefined) patch.title = changes.title;
+      if (changes.notes !== undefined) patch.notes = changes.notes;
+      if (typeof changes.due === 'string') patch.due = changes.due;
+      if (Object.keys(patch).length > 0) {
+        await this.api.updateTask(original.taskListId, original.id, patch);
+      }
+      // 2. Clearing the due date is a distinct PATCH due:null (reuse clearDue).
+      if (changes.due === null) {
+        await this.api.clearDue(original.taskListId, original.id);
+      }
+      // 3. Move last, only when the list actually changed.
+      if (movingList && changes.listId) {
+        await this.api.move(original.taskListId, original.id, changes.listId, destTitle);
+      }
+      await this.refresh();
+    } catch (err) {
+      if (err instanceof SilentRenewFailedError) {
+        this.patch({ screen: 'connect', connectError: false });
+        throw err;
+      }
+      if (movingList && isRecurringMoveError(err)) {
+        // Field changes already persisted; keep them and surface only the move
+        // failure. Refresh so the list shows the applied changes, then resolve.
+        this.showToast("Recurring tasks can't be moved to another list.");
+        await this.refresh();
+        return;
+      }
+      this.showToast('Could not save changes. Try again.');
+      throw err;
+    }
+  }
+
+  /**
+   * Delete a task. Optimistically removes it from the fetched set (the Edit
+   * screen closes back to the list, where it should already be gone), then calls
+   * the API and refreshes. On a real online failure the task is restored and a
+   * toast shown. Offline delete is out of scope: we toast and do NOT enqueue.
+   * Rejects on failure so the Edit screen can stay open.
+   */
+  async deleteTask(task: Task): Promise<void> {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      // Offline delete is out of scope: do NOT enqueue; just tell the user.
+      this.showToast("Can't delete the task while offline");
+      throw new Error('offline');
+    }
+    const removed = this.removeTask(task.id);
+    try {
+      await this.api.deleteTask(task.taskListId, task.id);
+      await this.refresh();
+    } catch (err) {
+      if (err instanceof SilentRenewFailedError) {
+        if (removed) this.restoreTask(removed);
+        this.patch({ screen: 'connect', connectError: false });
+        throw err;
+      }
+      if (removed) this.restoreTask(removed);
+      this.showToast('Could not delete the task. Try again.');
       throw err;
     }
   }

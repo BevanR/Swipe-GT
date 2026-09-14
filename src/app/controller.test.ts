@@ -63,6 +63,25 @@ function makeApi(initial: Task[]): ApiLike & { store: Task[] } {
       const t = store.find((x) => x.id === id);
       if (t) t.due = null;
     }),
+    updateTask: vi.fn(
+      async (
+        _l: string,
+        id: string,
+        changes: { title?: string; notes?: string; due?: string },
+      ) => {
+        const t = store.find((x) => x.id === id);
+        if (t) {
+          if (changes.title !== undefined) t.title = changes.title;
+          if (changes.notes !== undefined) t.notes = changes.notes;
+          if (changes.due !== undefined) t.due = changes.due;
+        }
+        return { ...(t as Task) };
+      },
+    ),
+    deleteTask: vi.fn(async (_l: string, id: string) => {
+      const i = store.findIndex((x) => x.id === id);
+      if (i >= 0) store.splice(i, 1);
+    }),
     move: vi.fn(async (_l: string, id: string, dest: string, destTitle?: string) => {
       const t = store.find((x) => x.id === id);
       if (t) {
@@ -229,6 +248,154 @@ describe('AppController.addTask', () => {
 
     await expect(ctrl.addTask({ taskListId: 'l1', title: 'Nope' })).rejects.toThrow();
     expect(ctrl.state.toast).toBeTruthy();
+    expect(await listMutations()).toHaveLength(0);
+  });
+});
+
+describe('AppController.updateTask', () => {
+  it('patches changed fields (title/notes/due) and refetches', async () => {
+    const api = makeApi([task('a', localDate(0))]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    const a = ctrl.state.grouped.today.find((t) => t.id === 'a')!;
+
+    await ctrl.updateTask(a, { title: 'Renamed', notes: 'hello', due: localDate(2) });
+
+    expect(api.updateTask).toHaveBeenCalledWith('l1', 'a', {
+      title: 'Renamed',
+      notes: 'hello',
+      due: localDate(2),
+    });
+    // clearDue is NOT used when a real date is set.
+    expect(api.clearDue).not.toHaveBeenCalled();
+    // load + the refresh after the update.
+    expect(api.listTasks).toHaveBeenCalledTimes(2);
+    expect(ctrl.state.allTasks.find((t) => t.id === 'a')?.title).toBe('Renamed');
+  });
+
+  it('clears the due date via clearDue when due is set to none (null)', async () => {
+    const api = makeApi([task('a', localDate(0))]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    const a = ctrl.state.grouped.today.find((t) => t.id === 'a')!;
+
+    await ctrl.updateTask(a, { due: null });
+
+    expect(api.clearDue).toHaveBeenCalledWith('l1', 'a');
+    // A null due must NOT be forwarded to updateTask as a field patch.
+    expect(api.updateTask).not.toHaveBeenCalled();
+    expect(ctrl.state.allTasks.find((t) => t.id === 'a')?.due).toBeNull();
+  });
+
+  it('moves the task when the list changes (patch first, then move)', async () => {
+    const api = makeApi([task('a', localDate(0))]);
+    // Two lists so a destination title can be resolved.
+    api.listTaskLists = vi.fn(async () => [
+      { id: 'l1', title: 'My Tasks' },
+      { id: 'l2', title: 'Work' },
+    ]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    const a = ctrl.state.grouped.today.find((t) => t.id === 'a')!;
+
+    await ctrl.updateTask(a, { title: 'Moved', listId: 'l2' });
+
+    expect(api.updateTask).toHaveBeenCalledWith('l1', 'a', { title: 'Moved' });
+    expect(api.move).toHaveBeenCalledWith('l1', 'a', 'l2', 'Work');
+    // Field patch happened before the move.
+    const updateOrder = (api.updateTask as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
+    const moveOrder = (api.move as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
+    expect(updateOrder).toBeLessThan(moveOrder);
+  });
+
+  it('does not move when the selected list is unchanged', async () => {
+    const api = makeApi([task('a', localDate(0))]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    const a = ctrl.state.grouped.today.find((t) => t.id === 'a')!;
+
+    await ctrl.updateTask(a, { title: 'Same list', listId: 'l1' });
+
+    expect(api.move).not.toHaveBeenCalled();
+  });
+
+  it('rejects with a toast and does not patch when offline', async () => {
+    const api = makeApi([task('a', localDate(0))]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    setOnline(false);
+    const a = ctrl.state.grouped.today.find((t) => t.id === 'a')!;
+
+    await expect(ctrl.updateTask(a, { title: 'Nope' })).rejects.toThrow();
+
+    expect(api.updateTask).not.toHaveBeenCalled();
+    expect(ctrl.state.toast).toBe("Can't save changes while offline");
+    expect(await listMutations()).toHaveLength(0);
+  });
+
+  it('keeps field changes but toasts when a recurring task cannot be moved', async () => {
+    const api = makeApi([task('a', localDate(0))]);
+    api.listTaskLists = vi.fn(async () => [
+      { id: 'l1', title: 'My Tasks' },
+      { id: 'l2', title: 'Work' },
+    ]);
+    api.move = vi.fn(async () => {
+      throw new Error('Google Tasks API 400 Bad Request: cannot move recurring task');
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    const a = ctrl.state.grouped.today.find((t) => t.id === 'a')!;
+
+    // Resolves (partial success) rather than throwing, so the screen can close.
+    await ctrl.updateTask(a, { title: 'Renamed', listId: 'l2' });
+
+    expect(api.updateTask).toHaveBeenCalledWith('l1', 'a', { title: 'Renamed' });
+    expect(ctrl.state.toast).toMatch(/recurring/i);
+    // The field change stuck (applied before the rejected move).
+    expect(ctrl.state.allTasks.find((t) => t.id === 'a')?.title).toBe('Renamed');
+  });
+});
+
+describe('AppController.deleteTask', () => {
+  it('optimistically removes the task and calls the API', async () => {
+    const api = makeApi([task('a', localDate(0)), task('b', localDate(0))]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    const a = ctrl.state.grouped.today.find((t) => t.id === 'a')!;
+
+    await ctrl.deleteTask(a);
+
+    expect(api.deleteTask).toHaveBeenCalledWith('l1', 'a');
+    expect(ctrl.state.grouped.today.map((t) => t.id)).toEqual(['b']);
+  });
+
+  it('rolls the task back and toasts on a real online error', async () => {
+    const api = makeApi([task('a', localDate(0))]);
+    api.deleteTask = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    const a = ctrl.state.grouped.today.find((t) => t.id === 'a')!;
+
+    await expect(ctrl.deleteTask(a)).rejects.toThrow();
+
+    expect(ctrl.state.grouped.today.map((t) => t.id)).toEqual(['a']);
+    expect(ctrl.state.toast).toBeTruthy();
+  });
+
+  it('rejects with a toast and does not remove when offline', async () => {
+    const api = makeApi([task('a', localDate(0))]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    setOnline(false);
+    const a = ctrl.state.grouped.today.find((t) => t.id === 'a')!;
+
+    await expect(ctrl.deleteTask(a)).rejects.toThrow();
+
+    expect(api.deleteTask).not.toHaveBeenCalled();
+    expect(ctrl.state.toast).toBe("Can't delete the task while offline");
+    expect(ctrl.state.grouped.today.map((t) => t.id)).toEqual(['a']);
     expect(await listMutations()).toHaveLength(0);
   });
 });

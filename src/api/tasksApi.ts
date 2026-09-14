@@ -152,6 +152,52 @@ export class TasksApi {
     };
   }
 
+  /**
+   * Update a task's editable fields via PATCH. Sends only the provided fields;
+   * `due` (a date-only string) is converted to the RFC3339 datetime Google
+   * expects. NOTE: this method never sends `due: null` — clearing a date goes
+   * through {@link clearDue} instead (see the caller in the controller). Returns
+   * the updated task mapped to our {@link Task} shape.
+   */
+  async updateTask(
+    taskListId: string,
+    taskId: string,
+    changes: { title?: string; notes?: string; due?: string },
+    taskListTitle?: string,
+  ): Promise<Task> {
+    const body = {
+      ...(changes.title !== undefined ? { title: changes.title } : {}),
+      ...(changes.notes !== undefined ? { notes: changes.notes } : {}),
+      ...(changes.due !== undefined ? { due: `${changes.due}T00:00:00.000Z` } : {}),
+    };
+    const res = await this.request(
+      `/lists/${encodeURIComponent(taskListId)}/tasks/${encodeURIComponent(taskId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      },
+    );
+    const item = (await res.json()) as GoogleTask;
+    return {
+      id: item.id,
+      taskListId,
+      taskListTitle: taskListTitle ?? '',
+      title: item.title ?? '',
+      due: item.due ? item.due.slice(0, 10) : null,
+      status: item.status ?? 'needsAction',
+      position: item.position ?? '',
+      ...(item.notes != null ? { notes: item.notes } : {}),
+    };
+  }
+
+  /** Delete a task from a list. */
+  async deleteTask(taskListId: string, taskId: string): Promise<void> {
+    await this.request(
+      `/lists/${encodeURIComponent(taskListId)}/tasks/${encodeURIComponent(taskId)}`,
+      { method: 'DELETE' },
+    );
+  }
+
   /** Patch a task's due date (RFC3339 date) — used to implement snooze. */
   async patchDue(taskListId: string, taskId: string, due: string): Promise<void> {
     await this.request(

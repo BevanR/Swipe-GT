@@ -123,8 +123,25 @@ export const handlers = [
     if (body.due === null) delete task.due;
     else if (typeof body.due === 'string') task.due = body.due;
     if (body.status === 'completed' || body.status === 'needsAction') task.status = body.status;
+    if (typeof body.title === 'string') task.title = body.title;
     if (typeof body.notes === 'string') task.notes = body.notes;
     return HttpResponse.json(task);
+  }),
+
+  // DELETE a task from a list
+  http.delete(`${BASE}/lists/:listId/tasks/:taskId`, ({ request, params }) => {
+    const unauth = requireAuth(request);
+    if (unauth) return unauth;
+    const listId = params.listId as string;
+    const taskId = params.taskId as string;
+    const list = tasksByList[listId];
+    const idx = list ? list.findIndex((t) => t.id === taskId) : -1;
+    if (!list || idx === -1) {
+      return HttpResponse.json({ error: { code: 404, message: 'Task not found' } }, { status: 404 });
+    }
+    list.splice(idx, 1);
+    // Google returns 204 No Content on a successful delete.
+    return new HttpResponse(null, { status: 204 });
   }),
 
   // POST move a task to another list (destinationTasklist query param)

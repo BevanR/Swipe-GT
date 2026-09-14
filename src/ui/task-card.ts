@@ -7,6 +7,13 @@ import { decideSwipe, isHorizontalSwipe, isVerticalScroll } from './swipe';
 import './snooze-menu.js';
 
 /**
+ * Max pointer travel (px) still counted as a tap rather than a drag. Kept at the
+ * axis-lock deadzone so a movement that never locked to the horizontal axis (and
+ * so never became a swipe) still reads as a tap only when it barely moved.
+ */
+const TAP_MOVE_SLOP = 8;
+
+/**
  * A single swipeable, full-bleed task row. Hand-rolled pointer-drag (no gesture
  * lib): drag right past threshold → Complete (green reveal, optimistic fly-out),
  * drag left past threshold → open the Snooze menu (amber reveal). The leading
@@ -312,7 +319,24 @@ export class TaskCard extends LitElement {
     if (!this.dragging) return;
     this.dragging = false;
     if (this.axis !== 'h') {
+      // No horizontal swipe was committed and no vertical scroll took over (that
+      // path aborts the drag in onPointerMove). If the pointer barely moved,
+      // treat this as a plain TAP on the card body and open the edit screen.
+      // Taps on the complete circle / snooze button never reach here: those
+      // buttons stopPropagation on pointerdown, so this drag was never started.
+      const dx = e.clientX - this.startX;
+      const dy = e.clientY - this.startY;
+      const moved = Math.abs(dx) > TAP_MOVE_SLOP || Math.abs(dy) > TAP_MOVE_SLOP;
       this.offset = 0;
+      if (!moved && !this.completing) {
+        this.dispatchEvent(
+          new CustomEvent('task-open', {
+            detail: { task: this.task },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      }
       return;
     }
     const dx = e.clientX - this.startX;

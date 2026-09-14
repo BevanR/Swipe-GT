@@ -208,6 +208,101 @@ describe('TasksApi.clearDue', () => {
   });
 });
 
+describe('TasksApi.updateTask', () => {
+  it('PATCHes only the provided fields and converts due to a datetime', async () => {
+    let seenUrl: string | undefined;
+    let method: string | undefined;
+    let body: unknown;
+    server.use(
+      http.patch(`${TASKS_API_BASE}/lists/:l/tasks/:t`, async ({ request }) => {
+        seenUrl = request.url;
+        method = request.method;
+        body = await request.json();
+        return HttpResponse.json({
+          kind: 'tasks#task',
+          id: 'task-today-1',
+          title: 'New title',
+          notes: 'New notes',
+          due: '2026-10-05T00:00:00.000Z',
+          position: '00000000000000000001',
+          status: 'needsAction',
+        });
+      }),
+    );
+
+    const updated = await makeApi().updateTask(
+      '@default',
+      'task-today-1',
+      { title: 'New title', notes: 'New notes', due: '2026-10-05' },
+      'My Tasks',
+    );
+
+    expect(method).toBe('PATCH');
+    expect(seenUrl).toBe(`${TASKS_API_BASE}/lists/%40default/tasks/task-today-1`);
+    expect(body).toEqual({
+      title: 'New title',
+      notes: 'New notes',
+      due: '2026-10-05T00:00:00.000Z',
+    });
+    expect(updated).toEqual({
+      id: 'task-today-1',
+      taskListId: '@default',
+      taskListTitle: 'My Tasks',
+      title: 'New title',
+      due: '2026-10-05',
+      status: 'needsAction',
+      position: '00000000000000000001',
+      notes: 'New notes',
+    });
+  });
+
+  it('omits fields that are not provided (and never sends due:null)', async () => {
+    let body: unknown;
+    server.use(
+      http.patch(`${TASKS_API_BASE}/lists/:l/tasks/:t`, async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ id: 'task-today-1', title: 'Only title', status: 'needsAction' });
+      }),
+    );
+    await makeApi().updateTask('@default', 'task-today-1', { title: 'Only title' });
+    expect(body).toEqual({ title: 'Only title' });
+  });
+
+  it('applies the update against the mock db', async () => {
+    await makeApi().updateTask('@default', 'task-today-1', { title: 'Live edit' });
+    expect(getMockTask('@default', 'task-today-1')?.title).toBe('Live edit');
+  });
+});
+
+describe('TasksApi.deleteTask', () => {
+  it('DELETEs the task endpoint', async () => {
+    let seenUrl: string | undefined;
+    let method: string | undefined;
+    server.use(
+      http.delete(`${TASKS_API_BASE}/lists/:l/tasks/:t`, ({ request }) => {
+        seenUrl = request.url;
+        method = request.method;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await makeApi().deleteTask('@default', 'task-today-1');
+    expect(method).toBe('DELETE');
+    expect(seenUrl).toBe(`${TASKS_API_BASE}/lists/%40default/tasks/task-today-1`);
+  });
+
+  it('removes the task from the mock db and throws on error', async () => {
+    await makeApi().deleteTask('@default', 'task-today-1');
+    expect(getMockTask('@default', 'task-today-1')).toBeUndefined();
+
+    server.use(
+      http.delete(`${TASKS_API_BASE}/lists/:l/tasks/:t`, () =>
+        HttpResponse.text('boom', { status: 500 }),
+      ),
+    );
+    await expect(makeApi().deleteTask('@default', 'missing')).rejects.toThrow(/500/);
+  });
+});
+
 describe('TasksApi.move', () => {
   it('POSTs to the move endpoint with destinationTasklist and maps to the destination list', async () => {
     let seenUrl: string | undefined;

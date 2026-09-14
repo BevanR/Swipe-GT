@@ -33,4 +33,22 @@ describe('hash router parseHash', () => {
     expect(hashFor('add')).toBe('#/add');
     expect(hashFor('list')).toBe('#/');
   });
+
+  it('builds an edit hash from its params (percent-encoding reserved chars)', () => {
+    expect(hashFor('edit', { listId: 'list-1', taskId: 'task-9' })).toBe(
+      '#/edit/list-1/task-9',
+    );
+    // The built-in `@default` list id is encoded so it survives the round trip.
+    expect(hashFor('edit', { listId: '@default', taskId: 'task-9' })).toBe(
+      '#/edit/%40default/task-9',
+    );
+  });
+
+  it('round-trips an edit hash back to decoded params', () => {
+    const hash = hashFor('edit', { listId: '@default', taskId: 'task-9' });
+    expect(parseHash(hash)).toEqual({
+      name: 'edit',
+      params: { listId: '@default', taskId: 'task-9' },
+    });
+  });
 });

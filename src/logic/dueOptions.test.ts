@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDueOptions } from './dueOptions';
+import { buildDueOptions, selectDueOption } from './dueOptions';
 import { computeSnoozeOptions } from './snooze';
 
 // The Add Task screen renders exactly the options this pure helper builds, so we
@@ -39,5 +39,39 @@ describe('buildDueOptions', () => {
   it('never includes the dateless Someday move option', () => {
     const options = buildDueOptions(new Date(2026, 8, 16));
     expect(options.map((o) => o.key)).not.toContain('someday');
+  });
+});
+
+describe('selectDueOption', () => {
+  const today = new Date(2026, 8, 16); // Wed 2026-09-16
+  const options = buildDueOptions(today);
+
+  it('selects "No date" when the task has no due', () => {
+    expect(selectDueOption(null, options)).toEqual({ key: 'none', pickedDate: '' });
+    expect(selectDueOption(undefined, options)).toEqual({ key: 'none', pickedDate: '' });
+  });
+
+  it('selects the matching chip when the due equals one of the option dates', () => {
+    const tomorrow = options.find((o) => o.key === 'tomorrow')!;
+    expect(tomorrow.date).toBe('2026-09-17');
+    expect(selectDueOption('2026-09-17', options)).toEqual({
+      key: 'tomorrow',
+      pickedDate: '',
+    });
+  });
+
+  it('matches against the date-only prefix of an RFC3339 datetime', () => {
+    const tomorrow = options.find((o) => o.key === 'tomorrow')!;
+    expect(selectDueOption(`${tomorrow.date}T00:00:00.000Z`, options)).toEqual({
+      key: 'tomorrow',
+      pickedDate: '',
+    });
+  });
+
+  it('falls back to "Pick a date" (prefilled) for any other date', () => {
+    expect(selectDueOption('2027-03-04', options)).toEqual({
+      key: 'pick',
+      pickedDate: '2027-03-04',
+    });
   });
 });

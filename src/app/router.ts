@@ -16,7 +16,13 @@ export type Route =
   | { name: 'edit'; params: { listId: string; taskId: string } };
 
 /** The route names that can be navigated to programmatically today. */
-export type NavTarget = 'list' | 'add';
+export type NavTarget = 'list' | 'add' | 'edit';
+
+/** Params required to build/navigate to an `edit` route. */
+export interface EditParams {
+  listId: string;
+  taskId: string;
+}
 
 /**
  * Parse a raw `location.hash` (e.g. `#/add`, `#/`, ``) into a {@link Route}.
@@ -36,8 +42,17 @@ export function parseHash(hash: string): Route {
       return { name: 'add', params: {} };
     case 'edit':
       // #/edit/<listId>/<taskId> — both segments required; otherwise fall back.
+      // Segments are percent-decoded so an id with reserved chars (e.g. the
+      // built-in `@default` list id, encoded to `%40default` by hashFor) round
+      // trips back to its original form for state lookups.
       if (parts.length >= 3 && parts[1] && parts[2]) {
-        return { name: 'edit', params: { listId: parts[1], taskId: parts[2] } };
+        return {
+          name: 'edit',
+          params: {
+            listId: safeDecode(parts[1]),
+            taskId: safeDecode(parts[2]),
+          },
+        };
       }
       return { name: 'list', params: {} };
     default:
@@ -45,9 +60,26 @@ export function parseHash(hash: string): Route {
   }
 }
 
-/** Build the hash string for a navigable target. */
-export function hashFor(target: NavTarget): string {
-  return target === 'add' ? '#/add' : '#/';
+/** Decode a hash segment, tolerating a malformed `%` sequence. */
+function safeDecode(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+/**
+ * Build the hash string for a navigable target. The `edit` target requires
+ * {@link EditParams}; its ids are percent-encoded so reserved characters survive
+ * the round trip through {@link parseHash}.
+ */
+export function hashFor(target: NavTarget, params?: EditParams): string {
+  if (target === 'add') return '#/add';
+  if (target === 'edit' && params) {
+    return `#/edit/${encodeURIComponent(params.listId)}/${encodeURIComponent(params.taskId)}`;
+  }
+  return '#/';
 }
 
 /**
@@ -58,10 +90,10 @@ export function hashFor(target: NavTarget): string {
 let navigatedWithinApp = false;
 
 /** Navigate to a route by setting the location hash (pushes a history entry). */
-export function navigate(target: NavTarget): void {
+export function navigate(target: NavTarget, params?: EditParams): void {
   navigatedWithinApp = true;
   if (typeof location !== 'undefined') {
-    location.hash = hashFor(target);
+    location.hash = hashFor(target, params);
   }
 }
 
