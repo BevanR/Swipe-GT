@@ -75,8 +75,6 @@ export class AppRoot extends LitElement {
           void this.controller.completeTask(e.detail.task)}
         @task-snooze=${(e: CustomEvent<{ task: Task; due: string }>) =>
           void this.controller.snoozeTask(e.detail.task, e.detail.due)}
-        @task-star=${(e: CustomEvent<{ taskId: string }>) =>
-          void this.controller.toggleStar(e.detail.taskId)}
         @set-view=${(e: CustomEvent<ViewName>) => void this.controller.setView(e.detail)}
       >
         ${this.renderScreen(s)}
@@ -105,7 +103,6 @@ export class AppRoot extends LitElement {
         return html`<task-list-view
           .grouped=${s.grouped}
           .allTasks=${s.allTasks}
-          .starredIds=${s.starredIds}
           .view=${s.view}
           ?offline=${s.offline}
           ?fromCache=${s.fromCache}

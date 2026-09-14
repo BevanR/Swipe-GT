@@ -8,12 +8,10 @@ export interface AppState {
   screen: Screen;
   /** Overdue/today/no-date grouping of the fetched set (drives the default view). */
   grouped: GroupedTasks;
-  /** Every fetched non-completed task on included lists (drives starred/future/search). */
+  /** Every fetched non-completed task on included lists (drives the future view). */
   allTasks: Task[];
   /** The active display view. */
   view: ViewName;
-  /** Locally-starred task ids. */
-  starredIds: string[];
   /** Task lists from the most recent tasklists.list (for the settings screen). */
   lists: TaskList[];
   theme: ThemeName;
@@ -41,7 +39,6 @@ export function initialState(theme: ThemeName): AppState {
     grouped: EMPTY_GROUPS,
     allTasks: [],
     view: 'default',
-    starredIds: [],
     lists: [],
     theme,
     fromCache: false,

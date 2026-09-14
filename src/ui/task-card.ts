@@ -10,9 +10,13 @@ import './snooze-menu.js';
  * A single swipeable, full-bleed task row. Hand-rolled pointer-drag (no gesture
  * lib): drag right past threshold → Complete (green reveal, optimistic fly-out),
  * drag left past threshold → open the Snooze menu (amber reveal). The leading
- * circle also completes; the trailing star toggles the local star. Dispatches
- * `task-complete`, `task-snooze` (detail: { due }) and `task-star` (detail:
- * { taskId }) for the controller to act on.
+ * circle also completes. Dispatches `task-complete` and `task-snooze` (detail:
+ * { due }) for the controller to act on.
+ *
+ * The row stays full-bleed in both themes; the Inbox vs Tasks look is driven by
+ * theme tokens consumed here (`--app-row-*`): Inbox rows get elevation, rounded
+ * corners and a gap (grouped white cards on a soft grey ground), while Tasks
+ * rows are flat, flush and divided by a hairline (denser).
  */
 @customElement('task-card')
 export class TaskCard extends LitElement {
@@ -21,10 +25,13 @@ export class TaskCard extends LitElement {
       display: block;
       position: relative;
       /* Clip the swipe reveal to the exact row bounds so no colour bleeds past
-         the row edges. Rows are square (no radius) and edge-to-edge. */
+         the row edges. Corner radius / divider / elevation are theme-driven. */
       overflow: hidden;
       background: var(--app-surface);
-      border-bottom: 1px solid var(--app-border);
+      border-bottom: var(--app-row-border, 1px solid var(--app-border));
+      border-radius: var(--app-row-radius, 0);
+      box-shadow: var(--app-row-shadow, none);
+      margin-bottom: var(--app-row-gap, 0);
       touch-action: pan-y;
     }
     /* Revealed action layers, behind the sliding front. They fill the row
@@ -159,40 +166,9 @@ export class TaskCard extends LitElement {
       -webkit-box-orient: vertical;
       overflow: hidden;
     }
-    .star {
-      appearance: none;
-      flex: none;
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      border: none;
-      background: transparent;
-      color: var(--app-on-surface-muted);
-      cursor: pointer;
-      padding: 0;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .star:hover {
-      background: color-mix(in srgb, var(--app-on-surface) 8%, transparent);
-    }
-    .star:focus-visible {
-      outline: 2px solid var(--app-accent);
-      outline-offset: -2px;
-    }
-    .star.on {
-      color: var(--app-star);
-    }
-    .star svg {
-      width: 22px;
-      height: 22px;
-      fill: currentColor;
-    }
   `;
 
   @property({ attribute: false }) task!: Task;
-  @property({ type: Boolean }) starred = false;
 
   @state() private offset = 0;
   @state() private animating = false;
@@ -307,17 +283,6 @@ export class TaskCard extends LitElement {
     this.flyOutAndComplete();
   };
 
-  private onStarToggle = (e: Event) => {
-    e.stopPropagation();
-    this.dispatchEvent(
-      new CustomEvent('task-star', {
-        detail: { taskId: this.task.id },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  };
-
   private flyOutAndComplete(): void {
     this.flyOutCollapse('right', () => {
       this.dispatchEvent(
@@ -430,26 +395,6 @@ export class TaskCard extends LitElement {
           </div>
           ${this.task?.notes ? html`<div class="notes">${this.task.notes}</div>` : ''}
         </div>
-        <button
-          class="star ${this.starred ? 'on' : ''}"
-          type="button"
-          aria-label=${this.starred ? 'Unstar task' : 'Star task'}
-          aria-pressed=${this.starred}
-          @pointerdown=${this.stopDrag}
-          @click=${this.onStarToggle}
-        >
-          ${this.starred
-            ? html`<svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"
-                />
-              </svg>`
-            : html`<svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M22 9.24l-7.19-.62L12 2 9.19 8.62 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z"
-                />
-              </svg>`}
-        </button>
       </div>
       <snooze-menu
         .options=${this.snoozeOptions}

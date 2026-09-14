@@ -99,8 +99,11 @@ scripts/
 ## Backlog (not yet built)
 
 - **Search** (deferred): client-side filter of the current view + a second "Other matches" section for matches outside the current view.
-- **Desktop view** (deferred, needs design): currently mobile-first; desktop layout is weak and should be designed deliberately, not patched.
+- **Desktop view** (deferred, needs design): currently mobile-first; desktop layout is weak and should be designed deliberately, not patched. Includes: Disconnect button fonts missing on desktop.
 - **Per-list views** (deferred): view an individual task list.
+- **Drag-drop reorder** of no-date tasks (persist to Google via `move`).
+- **Undo button** in the row's collapse gap after complete/snooze (hold ~2s before collapsing).
+- **Star** — removed. The public Tasks API has no starred field; Google's native star uses a private API we can't use. Revisit only if Google exposes it publicly.
 - Dark-mode visual polish.
 
 ## Testing notes

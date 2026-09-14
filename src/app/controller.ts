@@ -56,7 +56,7 @@ export class AppController extends EventTarget {
     this.auth = authClient;
     this.api =
       opts?.api ?? new TasksApi(() => (authClient as AuthClient).getValidAccessToken());
-    this._state = initialState(opts?.theme ?? 'inbox');
+    this._state = initialState(opts?.theme ?? 'tasks');
   }
 
   get state(): AppState {
@@ -77,7 +77,6 @@ export class AppController extends EventTarget {
     this.patch({
       theme: cfg.theme,
       view: cfg.view,
-      starredIds: cfg.starredTaskIds,
     });
     this.wireRefreshTriggers();
 
@@ -334,19 +333,6 @@ export class AppController extends EventTarget {
     if (this._state.view === view) return;
     this.patch({ view });
     await setConfig({ view });
-  }
-
-  /**
-   * Toggle a task's local star (the Tasks API has no star field). Persists the
-   * full starred-id list and updates state for an instant UI response.
-   */
-  async toggleStar(taskId: string): Promise<void> {
-    const has = this._state.starredIds.includes(taskId);
-    const starredIds = has
-      ? this._state.starredIds.filter((id) => id !== taskId)
-      : [...this._state.starredIds, taskId];
-    this.patch({ starredIds });
-    await setConfig({ starredTaskIds: starredIds });
   }
 
   async setInclusion(listId: string, included: boolean): Promise<void> {

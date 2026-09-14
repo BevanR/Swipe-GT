@@ -42,7 +42,7 @@ describe('config', () => {
     await setConfig({ listInclusion: { l1: false } });
     const cfg = await getConfig();
     expect(cfg.listInclusion).toEqual({ l1: false });
-    expect(cfg.theme).toBe('inbox'); // default
+    expect(cfg.theme).toBe('tasks'); // default
   });
 });
 

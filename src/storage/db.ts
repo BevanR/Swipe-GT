@@ -3,16 +3,18 @@ import type { AppConfig, PendingMutation, Snapshot } from '../types';
 
 /**
  * Default app configuration used when nothing has been persisted yet.
- * `listInclusion` is empty (all lists default to included), theme is 'inbox',
- * and there is no auth state.
+ * `listInclusion` is empty (all lists default to included), theme is 'tasks'
+ * (the preferred look), and there is no auth state.
  */
 export const DEFAULT_CONFIG: AppConfig = {
   listInclusion: {},
-  theme: 'inbox',
+  theme: 'tasks',
   auth: null,
-  starredTaskIds: [],
   view: 'default',
 };
+
+/** The display views the app knows how to render. */
+const VALID_VIEWS: ReadonlyArray<AppConfig['view']> = ['default', 'future'];
 
 const DB_NAME = 'g-tasks';
 const DB_VERSION = 1;
@@ -73,7 +75,11 @@ export function _resetDbForTests(): void {
 export async function getConfig(): Promise<AppConfig> {
   const db = await getDb();
   const stored = await db.get(CONFIG_STORE, CONFIG_KEY);
-  return { ...DEFAULT_CONFIG, ...stored };
+  const merged = { ...DEFAULT_CONFIG, ...stored };
+  // Guard against a stale/removed view (e.g. an old 'starred') persisted by a
+  // previous version so we never render an unknown view.
+  if (!VALID_VIEWS.includes(merged.view)) merged.view = 'default';
+  return merged;
 }
 
 /** Merge a partial config patch into the persisted {@link AppConfig}. */

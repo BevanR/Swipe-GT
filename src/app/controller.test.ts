@@ -163,28 +163,23 @@ describe('AppController.boot', () => {
     expect(ctrl.state.screen).toBe('connect');
   });
 
-  it('restores the persisted view and starred ids from config', async () => {
-    await setConfig({ view: 'future', starredTaskIds: ['x', 'y'] });
+  it('restores the persisted view from config', async () => {
+    await setConfig({ view: 'future' });
     const auth = makeAuth();
     auth.isConnected = vi.fn(async () => false);
     const ctrl = new AppController({ auth, api: makeApi([]) });
     await ctrl.boot();
     expect(ctrl.state.view).toBe('future');
-    expect(ctrl.state.starredIds).toEqual(['x', 'y']);
   });
-});
 
-describe('AppController.toggleStar', () => {
-  it('adds then removes a star and persists it', async () => {
-    const ctrl = new AppController({ auth: makeAuth(), api: makeApi([]) });
-
-    await ctrl.toggleStar('t1');
-    expect(ctrl.state.starredIds).toEqual(['t1']);
-    expect((await getConfig()).starredTaskIds).toEqual(['t1']);
-
-    await ctrl.toggleStar('t1');
-    expect(ctrl.state.starredIds).toEqual([]);
-    expect((await getConfig()).starredTaskIds).toEqual([]);
+  it('falls back to the default view when a stale/unknown view is persisted', async () => {
+    // Simulate an old build that persisted the removed 'starred' view.
+    await setConfig({ view: 'starred' as unknown as 'default' });
+    const auth = makeAuth();
+    auth.isConnected = vi.fn(async () => false);
+    const ctrl = new AppController({ auth, api: makeApi([]) });
+    await ctrl.boot();
+    expect(ctrl.state.view).toBe('default');
   });
 });
 
@@ -199,7 +194,7 @@ describe('AppController.setView', () => {
     await ctrl.load();
 
     // The full fetched set (incl. the future task) is retained for the
-    // starred/future views, even though it is filtered out of `grouped`.
+    // future view, even though it is filtered out of `grouped`.
     expect(ctrl.state.allTasks.map((t) => t.id).sort()).toEqual([
       'future',
       'overdue',
