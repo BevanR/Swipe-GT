@@ -106,9 +106,18 @@ export class SnoozeMenu extends LitElement {
       else if (!this.open && d.open) void d.close();
     }
     if (changed.has('picking') && this.picking) {
-      void this.updateComplete.then(() =>
-        this.renderRoot.querySelector<HTMLInputElement>('input[type="date"]')?.focus(),
-      );
+      // Open the OS date picker directly (one tap) once the input has rendered.
+      // showPicker() throws when unsupported or not user-activated — fall back to
+      // focus, leaving the revealed input as the usable fallback UI.
+      void this.updateComplete.then(() => {
+        const input = this.renderRoot.querySelector<HTMLInputElement>('input[type="date"]');
+        if (!input) return;
+        try {
+          input.showPicker();
+        } catch {
+          input.focus();
+        }
+      });
     }
   }
 

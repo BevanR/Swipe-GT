@@ -65,20 +65,15 @@ export interface TaskUpdateChanges {
   listId?: string;
 }
 
-/** Remembers where a task lived so an online failure can roll it back in. */
-interface RemovedTask {
-  task: Task;
-  index: number;
-}
-
 /**
  * Heuristic: does this error look like Google refusing to MOVE a recurring task
  * between lists? The REST client throws an Error whose message includes the raw
- * Google error body, which mentions recurrence for this case.
+ * Google error body. Google's real wording varies (e.g. "repeating"), so match
+ * both stems rather than the narrow `/recurr/` that missed the live error text.
  */
 function isRecurringMoveError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return /recurr/i.test(msg);
+  return /recurr|repeat/i.test(msg);
 }
 
 /**
@@ -229,14 +224,18 @@ export class AppController extends EventTarget {
 
   // --- mutations (optimistic) ---------------------------------------------
 
-  /** Optimistically complete a task (card already animated out). */
+  /**
+   * Optimistically complete a task (card already animated out). Completing REMOVES
+   * the task from every view, so this removes it from the fetched set rather than
+   * updating it in place; the post-mutation refresh reconciles.
+   */
   async completeTask(task: Task): Promise<void> {
-    const removed = this.removeTask(task.id);
+    const prev = this.removeTaskLocal(task.id);
     try {
       await this.api.complete(task.taskListId, task.id);
       await this.refresh();
     } catch (err) {
-      await this.handleMutationFailure(err, removed, {
+      await this.handleMutationFailure(err, prev, {
         id: crypto.randomUUID(),
         type: 'complete',
         taskId: task.id,
@@ -246,14 +245,21 @@ export class AppController extends EventTarget {
     }
   }
 
-  /** Optimistically snooze a task to `due` (card already animated out). */
+  /**
+   * Optimistically snooze a task to `due`. Snoozing does NOT remove the task —
+   * setting its due date re-partitions it into its destination view instantly
+   * (Scheduled for a future date, or Now when `due` is today/overdue), so the
+   * other view is populated the moment the user navigates there. The API call +
+   * refresh then reconcile. On a real online failure the change is reverted; when
+   * offline the change is kept and the mutation is queued for later drain.
+   */
   async snoozeTask(task: Task, due: string): Promise<void> {
-    const removed = this.removeTask(task.id);
+    const prev = this.updateTaskLocal(task.id, { due });
     try {
       await this.api.patchDue(task.taskListId, task.id, due);
       await this.refresh();
     } catch (err) {
-      await this.handleMutationFailure(err, removed, {
+      await this.handleMutationFailure(err, prev, {
         id: crypto.randomUUID(),
         type: 'snooze',
         taskId: task.id,
@@ -289,7 +295,14 @@ export class AppController extends EventTarget {
       return;
     }
     const somedayTitle = this._state.lists.find((l) => l.id === somedayListId)?.title;
-    const removed = this.removeTask(task.id);
+    // Optimistically move the task in place: dateless AND in the Someday list ⇒
+    // it re-partitions into the Someday view instantly. The API move + clear +
+    // refresh then reconcile.
+    const prev = this.updateTaskLocal(task.id, {
+      due: null,
+      taskListId: somedayListId,
+      taskListTitle: somedayTitle ?? '',
+    });
     try {
       const moved = await this.api.move(
         task.taskListId,
@@ -303,14 +316,19 @@ export class AppController extends EventTarget {
       await this.refresh();
     } catch (err) {
       if (err instanceof SilentRenewFailedError) {
+        if (prev) this.revertTasks(prev);
         this.patch({ screen: 'connect', connectError: false });
         return;
       }
-      if (removed) this.restoreTask(removed);
+      // ANY move failure reverts the optimistic change and always toasts, so the
+      // user gets feedback. Recurring tasks can't be moved between lists (Google
+      // rejects it, and the public API can't reveal recurrence in advance), so a
+      // recurrence-like error gets a specific message; everything else generic.
+      if (prev) this.revertTasks(prev);
       if (isRecurringMoveError(err)) {
         this.showToast("Recurring tasks can't be moved to Someday.");
       } else {
-        this.showToast('Could not move to Someday. Try again.');
+        this.showToast("Couldn't move to Someday.");
       }
     }
   }
@@ -333,17 +351,20 @@ export class AppController extends EventTarget {
       this.showToast("Can't do that while offline");
       return;
     }
-    const removed = this.removeTask(task.id);
+    // Optimistically clear the date in place: a dateless task shows in Now (or
+    // stays in Someday if it's in the Someday list), so it re-partitions
+    // instantly. The API clear + refresh then reconcile.
+    const prev = this.updateTaskLocal(task.id, { due: null });
     try {
       await this.api.clearDue(task.taskListId, task.id);
       await this.refresh();
     } catch (err) {
       if (err instanceof SilentRenewFailedError) {
-        if (removed) this.restoreTask(removed);
+        if (prev) this.revertTasks(prev);
         this.patch({ screen: 'connect', connectError: false });
         return;
       }
-      if (removed) this.restoreTask(removed);
+      if (prev) this.revertTasks(prev);
       this.showToast('Something went wrong. Try again.');
     }
   }
@@ -407,6 +428,20 @@ export class AppController extends EventTarget {
     const destTitle = movingList
       ? this._state.lists.find((l) => l.id === changes.listId)?.title
       : undefined;
+
+    // Optimistically apply the edited fields in place so the underlying list
+    // re-partitions immediately (e.g. a new due date moves it to Scheduled). The
+    // API calls + refresh then reconcile.
+    const localPatch: Partial<Task> = {};
+    if (changes.title !== undefined) localPatch.title = changes.title;
+    if (changes.notes !== undefined) localPatch.notes = changes.notes;
+    if (changes.due !== undefined) localPatch.due = changes.due;
+    if (movingList && changes.listId) {
+      localPatch.taskListId = changes.listId;
+      localPatch.taskListTitle = destTitle ?? '';
+    }
+    const prev = this.updateTaskLocal(original.id, localPatch);
+
     try {
       // 1. Patch the scalar fields (title/notes and a date being SET) together.
       const patch: { title?: string; notes?: string; due?: string } = {};
@@ -427,16 +462,19 @@ export class AppController extends EventTarget {
       await this.refresh();
     } catch (err) {
       if (err instanceof SilentRenewFailedError) {
+        if (prev) this.revertTasks(prev);
         this.patch({ screen: 'connect', connectError: false });
         throw err;
       }
       if (movingList && isRecurringMoveError(err)) {
         // Field changes already persisted; keep them and surface only the move
-        // failure. Refresh so the list shows the applied changes, then resolve.
+        // failure. Refresh so the list reconciles to the truth (field changes
+        // applied, list unchanged) — this also undoes the optimistic list move.
         this.showToast("Recurring tasks can't be moved to another list.");
         await this.refresh();
         return;
       }
+      if (prev) this.revertTasks(prev);
       this.showToast('Could not save changes. Try again.');
       throw err;
     }
@@ -455,17 +493,19 @@ export class AppController extends EventTarget {
       this.showToast("Can't delete the task while offline");
       throw new Error('offline');
     }
-    const removed = this.removeTask(task.id);
+    // Deleting REMOVES the task from every view, so this removes it from the
+    // fetched set rather than updating it in place.
+    const prev = this.removeTaskLocal(task.id);
     try {
       await this.api.deleteTask(task.taskListId, task.id);
       await this.refresh();
     } catch (err) {
       if (err instanceof SilentRenewFailedError) {
-        if (removed) this.restoreTask(removed);
+        this.revertTasks(prev);
         this.patch({ screen: 'connect', connectError: false });
         throw err;
       }
-      if (removed) this.restoreTask(removed);
+      this.revertTasks(prev);
       this.showToast('Could not delete the task. Try again.');
       throw err;
     }
@@ -473,7 +513,7 @@ export class AppController extends EventTarget {
 
   private async handleMutationFailure(
     err: unknown,
-    removed: RemovedTask | null,
+    prev: Task[] | null,
     mutation: Parameters<typeof enqueueMutation>[0],
   ): Promise<void> {
     if (err instanceof SilentRenewFailedError) {
@@ -482,30 +522,41 @@ export class AppController extends EventTarget {
     }
     const offline = typeof navigator !== 'undefined' && !navigator.onLine;
     if (offline) {
-      // Keep the optimistic removal; queue the mutation for later drain.
+      // Keep the optimistic change; queue the mutation for later drain.
       await enqueueMutation(mutation);
       this.showToast('Offline — change queued.');
       return;
     }
-    // Real online error: roll the card back in and warn.
-    if (removed) this.restoreTask(removed);
+    // Real online error: revert the optimistic change and warn.
+    this.revertTasks(prev);
     this.showToast('Something went wrong. Try again.');
   }
 
-  /** Remove a task from the fetched set; return where it was for rollback. */
-  private removeTask(taskId: string): RemovedTask | null {
-    const idx = this._state.allTasks.findIndex((t) => t.id === taskId);
-    if (idx === -1) return null;
-    const next = [...this._state.allTasks];
-    const [task] = next.splice(idx, 1);
+  /**
+   * Optimistically update a task IN PLACE in the fetched set (rather than
+   * removing it), then recompute the derived views so it re-partitions into its
+   * destination view instantly. Returns the previous `allTasks` array as a
+   * snapshot for {@link revertTasks} (untouched — the patched task is a fresh
+   * object), or null when the task isn't present.
+   */
+  private updateTaskLocal(taskId: string, patch: Partial<Task>): Task[] | null {
+    const prev = this._state.allTasks;
+    if (!prev.some((t) => t.id === taskId)) return null;
+    const next = prev.map((t) => (t.id === taskId ? { ...t, ...patch } : t));
     this.setTasks(next);
-    return { task, index: idx };
+    return prev;
   }
 
-  private restoreTask(removed: RemovedTask): void {
-    const next = [...this._state.allTasks];
-    next.splice(removed.index, 0, removed.task);
-    this.setTasks(next);
+  /** Remove a task from the fetched set; return the previous array for rollback. */
+  private removeTaskLocal(taskId: string): Task[] {
+    const prev = this._state.allTasks;
+    this.setTasks(prev.filter((t) => t.id !== taskId));
+    return prev;
+  }
+
+  /** Restore a captured `allTasks` snapshot (revert an optimistic change). */
+  private revertTasks(prev: Task[] | null): void {
+    if (prev) this.setTasks(prev);
   }
 
   /** Set the fetched task set and keep the three derived views in sync. */

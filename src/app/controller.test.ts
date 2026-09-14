@@ -97,6 +97,15 @@ function setOnline(online: boolean): void {
   Object.defineProperty(navigator, 'onLine', { value: online, configurable: true });
 }
 
+/** A promise plus its resolve handle, to hold an API call pending mid-mutation. */
+function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory();
   _resetDbForTests();
@@ -654,5 +663,168 @@ describe('AppController.moveToSomeday', () => {
     expect(ctrl.state.toast).toBeTruthy();
     expect(ctrl.state.toast).not.toMatch(/recurring/i);
     expect(await listMutations()).toHaveLength(0);
+  });
+
+  it('shows the generic message on a non-recurrence move failure', async () => {
+    await setConfig({ somedayListId: 'l1' });
+    const api = makeApi([task('t', localDate(0))]);
+    api.move = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.boot();
+    const t = ctrl.state.grouped.today.find((x) => x.id === 't')!;
+
+    await ctrl.moveToSomeday(t);
+
+    expect(ctrl.state.toast).toBe("Couldn't move to Someday.");
+  });
+
+  it('treats Google\'s "repeating" wording as a recurrence error', async () => {
+    await setConfig({ somedayListId: 'l1' });
+    const api = makeApi([task('t', localDate(0))]);
+    api.move = vi.fn(async () => {
+      throw new Error('Google Tasks API 400 Bad Request: cannot move a repeating task');
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.boot();
+    const t = ctrl.state.grouped.today.find((x) => x.id === 't')!;
+
+    await ctrl.moveToSomeday(t);
+
+    expect(ctrl.state.toast).toBe("Recurring tasks can't be moved to Someday.");
+  });
+});
+
+describe('optimistic in-place cross-view moves (re-partition before refetch)', () => {
+  it('snooze moves the task into Scheduled instantly, before the refetch resolves', async () => {
+    const api = makeApi([task('a', localDate(-1))]); // overdue → Now
+    const gate = deferred();
+    api.patchDue = vi.fn(async (_l: string, id: string, due: string) => {
+      const t = api.store.find((x) => x.id === id);
+      if (t) t.due = due;
+      await gate.promise; // hold the API (and thus the refetch) pending
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    const a = ctrl.state.grouped.overdue.find((t) => t.id === 'a')!;
+
+    const p = ctrl.snoozeTask(a, localDate(3));
+    // Present in the NEW view's partition immediately (no refetch yet).
+    expect(ctrl.state.grouped.overdue).toEqual([]);
+    expect(ctrl.state.scheduled.map((t) => t.id)).toEqual(['a']);
+
+    gate.resolve();
+    await p;
+    // The reconciling refetch keeps it in Scheduled.
+    expect(ctrl.state.scheduled.map((t) => t.id)).toEqual(['a']);
+  });
+
+  it('snooze reverts the task to its original view on an online failure', async () => {
+    const api = makeApi([task('a', localDate(-1))]); // overdue → Now
+    api.patchDue = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    const a = ctrl.state.grouped.overdue.find((t) => t.id === 'a')!;
+
+    await ctrl.snoozeTask(a, localDate(3));
+
+    expect(ctrl.state.grouped.overdue.map((t) => t.id)).toEqual(['a']);
+    expect(ctrl.state.scheduled).toEqual([]);
+    expect(ctrl.state.toast).toBeTruthy();
+    expect(await listMutations()).toHaveLength(0);
+  });
+
+  it('clearTaskDate moves the task into Now instantly, before the refetch resolves', async () => {
+    const api = makeApi([task('a', localDate(3))]); // future → Scheduled
+    const gate = deferred();
+    api.clearDue = vi.fn(async (_l: string, id: string) => {
+      const t = api.store.find((x) => x.id === id);
+      if (t) t.due = null;
+      await gate.promise;
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    const a = ctrl.state.scheduled.find((t) => t.id === 'a')!;
+
+    const p = ctrl.clearTaskDate(a);
+    expect(ctrl.state.scheduled).toEqual([]);
+    expect(ctrl.state.grouped.noDate.map((t) => t.id)).toEqual(['a']);
+
+    gate.resolve();
+    await p;
+    expect(ctrl.state.grouped.noDate.map((t) => t.id)).toEqual(['a']);
+  });
+
+  it('moveToSomeday moves the task into Someday instantly, before the refetch resolves', async () => {
+    await setConfig({ somedayListId: 'l1' });
+    const api = makeApi([task('t', localDate(0))]); // today → Now
+    const gate = deferred();
+    api.move = vi.fn(
+      async (_l: string, id: string, dest: string, destTitle?: string) => {
+        const t = api.store.find((x) => x.id === id)!;
+        t.taskListId = dest;
+        t.taskListTitle = destTitle ?? '';
+        t.due = null; // move+clear reflected server-side
+        await gate.promise;
+        return { ...t };
+      },
+    );
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.boot();
+    const t = ctrl.state.grouped.today.find((x) => x.id === 't')!;
+
+    const p = ctrl.moveToSomeday(t);
+    expect(ctrl.state.grouped.today).toEqual([]);
+    expect(ctrl.state.someday.map((x) => x.id)).toEqual(['t']);
+
+    gate.resolve();
+    await p;
+    expect(ctrl.state.someday.map((x) => x.id)).toEqual(['t']);
+  });
+
+  it('updateTask (edit) re-partitions in place instantly, before the refetch resolves', async () => {
+    const api = makeApi([task('a', localDate(0))]); // today → Now
+    const gate = deferred();
+    api.updateTask = vi.fn(
+      async (_l: string, id: string, changes: { title?: string; due?: string }) => {
+        const t = api.store.find((x) => x.id === id)!;
+        if (changes.title !== undefined) t.title = changes.title;
+        if (changes.due !== undefined) t.due = changes.due;
+        await gate.promise;
+        return { ...t };
+      },
+    );
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    const a = ctrl.state.grouped.today.find((t) => t.id === 'a')!;
+
+    const p = ctrl.updateTask(a, { due: localDate(5) });
+    expect(ctrl.state.grouped.today).toEqual([]);
+    expect(ctrl.state.scheduled.map((t) => t.id)).toEqual(['a']);
+
+    gate.resolve();
+    await p;
+    expect(ctrl.state.scheduled.map((t) => t.id)).toEqual(['a']);
+  });
+
+  it('updateTask reverts the optimistic change on a hard failure', async () => {
+    const api = makeApi([task('a', localDate(0))]); // today → Now
+    api.updateTask = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    const a = ctrl.state.grouped.today.find((t) => t.id === 'a')!;
+
+    await expect(ctrl.updateTask(a, { title: 'Renamed', due: localDate(5) })).rejects.toThrow();
+
+    // Reverted to the original view and title; nothing leaked into Scheduled.
+    expect(ctrl.state.scheduled).toEqual([]);
+    expect(ctrl.state.grouped.today.map((t) => t.id)).toEqual(['a']);
+    expect(ctrl.state.allTasks.find((t) => t.id === 'a')?.title).toBe('Task a');
+    expect(ctrl.state.toast).toBeTruthy();
   });
 });

@@ -248,9 +248,23 @@ export class EditTaskScreen extends LitElement {
   }
 
   updated(changed: Map<string, unknown>): void {
-    // Focus the inline date input the moment "Pick a date" is chosen.
+    // Open the OS date picker directly the moment "Pick a date" is chosen.
     if (changed.has('dueKey') && this.dueKey === 'pick') {
-      void this.updateComplete.then(() => this.dateInput?.focus());
+      void this.updateComplete.then(() => this.openDatePicker());
+    }
+  }
+
+  /**
+   * Open the native date picker in one tap. showPicker() throws when unsupported
+   * or not user-activated, so fall back to focusing the (still-revealed) input.
+   */
+  private openDatePicker(): void {
+    const input = this.dateInput;
+    if (!input) return;
+    try {
+      input.showPicker();
+    } catch {
+      input.focus();
     }
   }
 
