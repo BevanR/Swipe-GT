@@ -67,7 +67,10 @@ export type SnoozeOptionKey =
   | 'thisWeekend'
   | 'nextWeek'
   | 'nextMonth'
-  | 'someday';
+  | 'someday'
+  // Dispatched only by the snooze menu's inline "Pick a date" input (never
+  // produced by computeSnoozeOptions); carries a user-chosen `date`.
+  | 'pick';
 
 export interface SnoozeOption {
   key: SnoozeOptionKey;

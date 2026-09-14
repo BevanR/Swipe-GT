@@ -1,5 +1,5 @@
-import { LitElement, css, html } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
+import { LitElement, css, html, nothing } from 'lit';
+import { customElement, property, state } from 'lit/decorators.js';
 import '@material/web/dialog/dialog.js';
 import '@material/web/list/list.js';
 import '@material/web/list/list-item.js';
@@ -36,10 +36,33 @@ export class SnoozeMenu extends LitElement {
       color: var(--app-on-surface-muted);
       font-size: 0.8rem;
     }
+    .pickrow {
+      display: flex;
+      justify-content: flex-end;
+      padding: 8px 16px 4px;
+    }
+    input[type='date'] {
+      appearance: none;
+      font: inherit;
+      font-size: 0.95rem;
+      color: var(--app-on-surface);
+      background: var(--app-surface);
+      border: 1px solid var(--app-border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color-scheme: light dark;
+    }
+    input[type='date']:focus-visible {
+      outline: 2px solid var(--app-accent);
+      outline-offset: -1px;
+    }
   `;
 
   @property({ type: Array }) options: SnoozeOption[] = [];
   @property({ type: Boolean }) open = false;
+
+  /** Whether the inline "Pick a date" input is revealed. */
+  @state() private picking = false;
 
   private dialog(): MdDialog | null {
     return this.renderRoot.querySelector('md-dialog');
@@ -49,8 +72,15 @@ export class SnoozeMenu extends LitElement {
     if (changed.has('open')) {
       const d = this.dialog();
       if (!d) return;
+      // Reset the pick-a-date affordance each time the menu opens or closes.
+      this.picking = false;
       if (this.open && !d.open) void d.show();
       else if (!this.open && d.open) void d.close();
+    }
+    if (changed.has('picking') && this.picking) {
+      void this.updateComplete.then(() =>
+        this.renderRoot.querySelector<HTMLInputElement>('input[type="date"]')?.focus(),
+      );
     }
   }
 
@@ -58,6 +88,18 @@ export class SnoozeMenu extends LitElement {
     this.dispatchEvent(
       new CustomEvent('snooze-pick', { detail: option, bubbles: true, composed: true }),
     );
+  }
+
+  /** Reveal the inline native date input for an arbitrary date. */
+  private startPick(): void {
+    this.picking = true;
+  }
+
+  /** Dispatch a `pick` snooze once the user has chosen a date. */
+  private onPickDate(e: Event): void {
+    const value = (e.target as HTMLInputElement).value;
+    if (!value) return;
+    this.pick({ key: 'pick', label: 'Pick a date', date: value });
   }
 
   private cancel(): void {
@@ -99,7 +141,31 @@ export class SnoozeMenu extends LitElement {
               </md-list-item>
             `,
           )}
+          <md-list-item
+            type="button"
+            role="menuitem"
+            aria-label="Pick a date"
+            @click=${() => this.startPick()}
+            @keydown=${(e: KeyboardEvent) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                this.startPick();
+              }
+            }}
+          >
+            <span slot="headline">Pick a date</span>
+            <span slot="supporting-text" class="date">Choose any date</span>
+          </md-list-item>
         </md-list>
+        ${this.picking
+          ? html`<div class="pickrow" slot="content">
+              <input
+                type="date"
+                aria-label="Pick a due date"
+                @input=${(e: Event) => this.onPickDate(e)}
+              />
+            </div>`
+          : nothing}
         <div slot="actions">
           <md-text-button @click=${() => this.cancel()}>Cancel</md-text-button>
         </div>

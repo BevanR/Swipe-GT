@@ -89,7 +89,7 @@ export class TaskCard extends LitElement {
       box-shadow: inset 4px 0 0 var(--app-warning-accent);
     }
     .front.animating {
-      transition: transform 0.24s cubic-bezier(0.2, 0, 0, 1);
+      transition: transform 0.15s cubic-bezier(0.2, 0, 0, 1);
     }
     .circle {
       appearance: none;
@@ -191,6 +191,18 @@ export class TaskCard extends LitElement {
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
+    }
+    /* Reduced motion: make the swipe-settle and the collapse/fly-out instant.
+       Shadow-DOM \`!important\` overrides even the inline height transition set
+       by flyOutCollapse, so the row still removes correctly — the setTimeout
+       that dispatches the complete/snooze event is JS and fires regardless. */
+    @media (prefers-reduced-motion: reduce) {
+      .front.animating {
+        transition-duration: 0s;
+      }
+      :host {
+        transition-duration: 0s !important;
+      }
     }
   `;
 
@@ -351,9 +363,11 @@ export class TaskCard extends LitElement {
 
   /**
    * Slide the front out in `dir` (keeping the coloured reveal visible), then
-   * collapse the row's height to 0 over ~200ms so completing/snoozing doesn't
-   * leave an empty gap, and finally fire `dispatch` for the controller to drop
-   * the task. (Later: hold this open with an Undo button before collapsing.)
+   * collapse the row's height to 0 (snappy, ~150ms) so completing/snoozing
+   * doesn't leave an empty gap, and finally fire `dispatch` for the controller
+   * to drop the task. Under reduced motion the shadow-DOM rule zeroes the height
+   * transition, but the setTimeout below still fires, so the row is removed
+   * either way. (Later: hold this open with an Undo button before collapsing.)
    */
   private flyOutCollapse(dir: 'left' | 'right', dispatch: () => void): void {
     const startHeight = this.offsetHeight;
@@ -361,12 +375,12 @@ export class TaskCard extends LitElement {
     this.offset = (dir === 'right' ? 1 : -1) * this.width() * 1.15;
     // Pin the current height, force a reflow, then transition it to 0.
     this.style.height = `${startHeight}px`;
-    this.style.transition = 'height 0.2s ease';
+    this.style.transition = 'height 0.15s ease';
     void this.offsetHeight;
     requestAnimationFrame(() => {
       this.style.height = '0px';
     });
-    window.setTimeout(dispatch, 220);
+    window.setTimeout(dispatch, 170);
   }
 
   /** Explicit snooze button (desktop-friendly): same path as a left-swipe commit. */

@@ -3,9 +3,12 @@ import { customElement, property, state } from 'lit/decorators.js';
 import type { AppController } from '../app/controller';
 import type { AppState } from '../app/state';
 import type { Task, ThemeName, ViewName } from '../types';
+import { currentRoute } from '../app/router.js';
+import type { Route } from '../app/router.js';
 import './connect-screen.js';
 import './task-list-view.js';
 import './settings-screen.js';
+import './add-task-screen.js';
 
 /**
  * Top-level shell. Subscribes to the controller's state and renders the current
@@ -42,20 +45,29 @@ export class AppRoot extends LitElement {
 
   @property({ attribute: false }) controller!: AppController;
   @state() private st!: AppState;
+  /** The current hash route; kept in sync with `location.hash`. */
+  @state() private route: Route = currentRoute();
 
   private onChange = () => {
     this.st = this.controller.state;
   };
 
+  private onHashChange = () => {
+    this.route = currentRoute();
+  };
+
   connectedCallback(): void {
     super.connectedCallback();
     this.st = this.controller.state;
+    this.route = currentRoute();
     this.controller.addEventListener('change', this.onChange);
+    window.addEventListener('hashchange', this.onHashChange);
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
     this.controller.removeEventListener('change', this.onChange);
+    window.removeEventListener('hashchange', this.onHashChange);
   }
 
   render() {
@@ -103,6 +115,16 @@ export class AppRoot extends LitElement {
         ></settings-screen>`;
       case 'list':
       default:
+        // Auth is settled and we're on the main app; the hash route decides
+        // whether to show the Add Task screen or the list. New route branches
+        // (e.g. a future `#/edit/...`) slot in here.
+        if (this.route.name === 'add') {
+          return html`<add-task-screen
+            .lists=${s.lists}
+            .onSubmit=${(input: { taskListId: string; title: string; due?: string }) =>
+              this.controller.addTask(input)}
+          ></add-task-screen>`;
+        }
         return html`<task-list-view
           .grouped=${s.grouped}
           .scheduled=${s.scheduled}
@@ -115,8 +137,6 @@ export class AppRoot extends LitElement {
           ?loading=${s.loading}
           .fetchedAt=${s.fetchedAt}
           .lists=${s.lists}
-          .addTask=${(input: { taskListId: string; title: string; due?: string }) =>
-            this.controller.addTask(input)}
         ></task-list-view>`;
     }
   }

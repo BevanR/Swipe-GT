@@ -7,9 +7,8 @@ import { partitionSearch } from '../logic/search.js';
 import type { SearchSections } from '../logic/search.js';
 import { NOW_EMPTY, SOMEDAY_EMPTY, pickEmpty } from './emptyMessages.js';
 import type { EmptyMessage } from './emptyMessages.js';
+import { navigate } from '../app/router.js';
 import './task-card.js';
-import './add-task-dialog.js';
-import type { AddTaskDialog, AddTaskInput } from './add-task-dialog.js';
 
 interface ViewDef {
   key: ViewName;
@@ -317,20 +316,13 @@ export class TaskListView extends LitElement {
   @property({ type: Number }) fetchedAt: number | null = null;
   /** All the user's lists, in Google order (default list first). */
   @property({ attribute: false }) lists: TaskList[] = [];
-  /** Async add-task handler wired to controller.addTask by the shell. */
-  @property({ attribute: false }) addTask?: (input: AddTaskInput) => Promise<void>;
 
-  @query('add-task-dialog') private addDialog?: AddTaskDialog;
   @query('#searchinput') private searchInput?: HTMLInputElement;
 
   /** Whether the header search field is expanded. */
   @state() private searchOpen = false;
   /** The transient (never persisted) search query. */
   @state() private searchQuery = '';
-
-  private openAddDialog(): void {
-    this.addDialog?.show();
-  }
 
   private toggleSearch(): void {
     this.searchOpen = !this.searchOpen;
@@ -620,15 +612,11 @@ export class TaskListView extends LitElement {
                   </div>`}
         </main>
 
-        <button class="fab" aria-label="Add task" @click=${() => this.openAddDialog()}>
+        <button class="fab" aria-label="Add task" @click=${() => navigate('add')}>
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" />
           </svg>
         </button>
-        <add-task-dialog
-          .lists=${this.lists}
-          .onSubmit=${this.addTask}
-        ></add-task-dialog>
       </div>
     `;
   }
