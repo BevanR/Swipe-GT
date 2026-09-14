@@ -67,10 +67,11 @@ export type SnoozeOptionKey =
   | 'thisWeekend'
   | 'nextWeek'
   | 'nextMonth'
-  // Clear the task's due date (moving it to Now). Dateless option; carries a
-  // null `date`. Distinct from `someday`, which also clears the date but moves
-  // the task into the Someday list.
-  | 'nodate'
+  // Land the task in the Now view. Dateless option; carries a null `date`. Clears
+  // the due date and, if the task is in the Someday list, moves it out to the
+  // default list. Distinct from `someday`, which also clears the date but moves
+  // the task INTO the Someday list.
+  | 'now'
   | 'someday'
   // Dispatched only by the snooze menu's inline "Pick a date" input (never
   // produced by computeSnoozeOptions); carries a user-chosen `date`.

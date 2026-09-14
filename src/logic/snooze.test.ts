@@ -238,48 +238,73 @@ describe('computeSnoozeOptions — Someday option (includeSomeday flag)', () => 
   });
 });
 
-describe('computeSnoozeOptions — No date option (includeNoDate flag)', () => {
-  it('is absent by default and when includeNoDate is false', () => {
-    expect(keys(computeSnoozeOptions(WED))).not.toContain('nodate');
-    expect(keys(computeSnoozeOptions(WED, { includeNoDate: false }))).not.toContain(
-      'nodate',
-    );
+describe('computeSnoozeOptions — Now option (includeNow flag)', () => {
+  it('is absent by default and when includeNow is false', () => {
+    expect(keys(computeSnoozeOptions(WED))).not.toContain('now');
+    expect(keys(computeSnoozeOptions(WED, { includeNow: false }))).not.toContain('now');
   });
 
-  it('is added with a null date and the "No date" label when includeNoDate is true', () => {
-    const opts = computeSnoozeOptions(WED, { includeNoDate: true });
-    const nodate = opts.find((o) => o.key === 'nodate');
-    expect(nodate).toBeDefined();
-    expect(nodate?.label).toBe('No date');
-    expect(nodate?.date).toBeNull();
+  it('is added with a null date and the "Now" label when includeNow is true', () => {
+    const opts = computeSnoozeOptions(WED, { includeNow: true });
+    const now = opts.find((o) => o.key === 'now');
+    expect(now).toBeDefined();
+    expect(now?.label).toBe('Now');
+    expect(now?.date).toBeNull();
   });
 
-  it('orders "No date" after the date options (right before Someday when both show)', () => {
-    // Wed shows all five date options; with both flags the tail is [..., nodate, someday].
-    const opts = computeSnoozeOptions(WED, { includeNoDate: true, includeSomeday: true });
+  it('orders "Now" after the date options (right before Someday when both show)', () => {
+    // Wed shows all five date options; with both flags the tail is [..., now, someday].
+    const opts = computeSnoozeOptions(WED, { includeNow: true, includeSomeday: true });
     expect(keys(opts)).toEqual([
       'tomorrow',
       'laterThisWeek',
       'thisWeekend',
       'nextWeek',
       'nextMonth',
-      'nodate',
+      'now',
       'someday',
     ]);
   });
 
   it('sits last when Someday is not shown, after all the date options', () => {
-    const opts = computeSnoozeOptions(WED, { includeToday: true, includeNoDate: true });
+    const opts = computeSnoozeOptions(WED, { includeToday: true, includeNow: true });
     expect(opts[0].key).toBe('today');
-    expect(opts[opts.length - 1].key).toBe('nodate');
+    expect(opts[opts.length - 1].key).toBe('now');
   });
 
   it('ordering is stable across weekdays (always after nextMonth)', () => {
     for (const day of [MON, TUE, WED, THU, FRI, SAT, SUN]) {
-      const opts = computeSnoozeOptions(day, { includeNoDate: true });
+      const opts = computeSnoozeOptions(day, { includeNow: true });
       const k = keys(opts);
-      expect(k[k.length - 1]).toBe('nodate');
-      expect(k.indexOf('nodate')).toBe(k.indexOf('nextMonth') + 1);
+      expect(k[k.length - 1]).toBe('now');
+      expect(k.indexOf('now')).toBe(k.indexOf('nextMonth') + 1);
     }
+  });
+});
+
+describe('computeSnoozeOptions — Now/Someday matrix (both are dateless)', () => {
+  // The task-card computes the include flags per task situation; here we assert
+  // the menu shape each combination of flags produces.
+
+  it('a dated task shows BOTH Now and Someday (both dateless, null date)', () => {
+    const opts = computeSnoozeOptions(WED, { includeNow: true, includeSomeday: true });
+    const now = opts.find((o) => o.key === 'now');
+    const someday = opts.find((o) => o.key === 'someday');
+    expect(now?.date).toBeNull();
+    expect(someday?.date).toBeNull();
+    expect(now?.label).toBe('Now');
+    expect(someday?.label).toBe('Someday');
+  });
+
+  it('a dateless Now task shows only Someday (no Now)', () => {
+    const opts = computeSnoozeOptions(WED, { includeNow: false, includeSomeday: true });
+    expect(keys(opts)).not.toContain('now');
+    expect(keys(opts)).toContain('someday');
+  });
+
+  it('a dateless Someday task shows only Now (no Someday)', () => {
+    const opts = computeSnoozeOptions(WED, { includeNow: true, includeSomeday: false });
+    expect(keys(opts)).toContain('now');
+    expect(keys(opts)).not.toContain('someday');
   });
 });

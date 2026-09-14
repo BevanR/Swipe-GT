@@ -409,7 +409,7 @@ describe('AppController.deleteTask', () => {
   });
 });
 
-describe('AppController.clearTaskDate', () => {
+describe('AppController.moveToNow', () => {
   it('clears the due date via the API and refetches (scheduled task → Now)', async () => {
     const api = makeApi([task('a', localDate(3))]);
     const ctrl = new AppController({ auth: makeAuth(), api });
@@ -418,9 +418,11 @@ describe('AppController.clearTaskDate', () => {
     expect(ctrl.state.scheduled.map((t) => t.id)).toEqual(['a']);
     const a = ctrl.state.scheduled.find((t) => t.id === 'a')!;
 
-    await ctrl.clearTaskDate(a);
+    await ctrl.moveToNow(a);
 
     expect(api.clearDue).toHaveBeenCalledWith('l1', 'a');
+    // Not in the Someday list, so no move.
+    expect(api.move).not.toHaveBeenCalled();
     // load + the refresh after clearing.
     expect(api.listTasks).toHaveBeenCalledTimes(2);
     // Now dateless, the task lands in Now's noDate group and leaves Scheduled.
@@ -429,16 +431,67 @@ describe('AppController.clearTaskDate', () => {
     expect(ctrl.state.allTasks.find((t) => t.id === 'a')?.due).toBeNull();
   });
 
-  it('optimistically removes the task before the API resolves', async () => {
-    const api = makeApi([task('a', localDate(3)), task('b', localDate(3))]);
+  it('ejects a Someday-list task to the default list, landing it in Now (optimistically)', async () => {
+    // Two lists: l1 is the default (Now) list, l2 is the Someday list. A dateless
+    // task parked in l2 is in the Someday view; picking "Now" moves it to l1.
+    const lists = [
+      { id: 'l1', title: 'My Tasks' },
+      { id: 'l2', title: 'Someday' },
+    ];
+    const store: Task[] = [
+      {
+        id: 't',
+        taskListId: 'l2',
+        taskListTitle: 'Someday',
+        title: 'Task t',
+        due: null,
+        status: 'needsAction',
+        position: '',
+      },
+    ];
+    const gate = deferred();
+    const api: ApiLike = {
+      listTaskLists: vi.fn(async () => lists.map((l) => ({ ...l }))),
+      listTasks: vi.fn(async (listId: string) =>
+        store.filter((t) => t.taskListId === listId).map((t) => ({ ...t })),
+      ),
+      insert: vi.fn(),
+      patchDue: vi.fn(),
+      complete: vi.fn(),
+      clearDue: vi.fn(async (_l: string, id: string) => {
+        const t = store.find((x) => x.id === id);
+        if (t) t.due = null;
+      }),
+      updateTask: vi.fn(),
+      deleteTask: vi.fn(),
+      move: vi.fn(async (_l: string, id: string, dest: string, destTitle?: string) => {
+        const t = store.find((x) => x.id === id)!;
+        t.taskListId = dest;
+        t.taskListTitle = destTitle ?? '';
+        await gate.promise; // hold refetch pending to prove optimism
+        return { ...t };
+      }),
+    };
+    await setConfig({ somedayListId: 'l2' });
     const ctrl = new AppController({ auth: makeAuth(), api });
-    await ctrl.load();
-    const a = ctrl.state.scheduled.find((t) => t.id === 'a')!;
+    await ctrl.boot();
+    // Starts parked in the Someday view.
+    expect(ctrl.state.someday.map((t) => t.id)).toEqual(['t']);
+    const t = ctrl.state.someday.find((x) => x.id === 't')!;
 
-    await ctrl.clearTaskDate(a);
+    const p = ctrl.moveToNow(t);
+    // Re-partitioned into Now instantly, before the move/refetch resolves.
+    expect(ctrl.state.someday).toEqual([]);
+    expect(ctrl.state.grouped.noDate.map((x) => x.id)).toEqual(['t']);
 
-    // 'a' cleared (now in Now), 'b' still scheduled.
-    expect(ctrl.state.scheduled.map((t) => t.id)).toEqual(['b']);
+    gate.resolve();
+    await p;
+
+    expect(api.move).toHaveBeenCalledWith('l2', 't', 'l1', 'My Tasks');
+    // After reconcile it remains dateless in the default list → Now.
+    expect(ctrl.state.someday).toEqual([]);
+    expect(ctrl.state.grouped.noDate.map((x) => x.id)).toEqual(['t']);
+    expect(ctrl.state.allTasks.find((x) => x.id === 't')?.taskListId).toBe('l1');
   });
 
   it('toasts and does NOT clear or enqueue when offline', async () => {
@@ -448,12 +501,13 @@ describe('AppController.clearTaskDate', () => {
     setOnline(false);
     const a = ctrl.state.scheduled.find((t) => t.id === 'a')!;
 
-    await ctrl.clearTaskDate(a);
+    await ctrl.moveToNow(a);
 
     expect(api.clearDue).not.toHaveBeenCalled();
+    expect(api.move).not.toHaveBeenCalled();
     expect(ctrl.state.toast).toBe("Can't do that while offline");
     expect(await listMutations()).toHaveLength(0);
-    // The task is untouched (no optimistic removal offline).
+    // The task is untouched (no optimistic change offline).
     expect(ctrl.state.scheduled.map((t) => t.id)).toEqual(['a']);
   });
 
@@ -466,7 +520,7 @@ describe('AppController.clearTaskDate', () => {
     await ctrl.load();
     const a = ctrl.state.scheduled.find((t) => t.id === 'a')!;
 
-    await ctrl.clearTaskDate(a);
+    await ctrl.moveToNow(a);
 
     // Restored to its original view; a toast is shown; nothing queued.
     expect(ctrl.state.scheduled.map((t) => t.id)).toEqual(['a']);
@@ -737,7 +791,7 @@ describe('optimistic in-place cross-view moves (re-partition before refetch)', (
     expect(await listMutations()).toHaveLength(0);
   });
 
-  it('clearTaskDate moves the task into Now instantly, before the refetch resolves', async () => {
+  it('moveToNow moves the task into Now instantly, before the refetch resolves', async () => {
     const api = makeApi([task('a', localDate(3))]); // future → Scheduled
     const gate = deferred();
     api.clearDue = vi.fn(async (_l: string, id: string) => {
@@ -749,7 +803,7 @@ describe('optimistic in-place cross-view moves (re-partition before refetch)', (
     await ctrl.load();
     const a = ctrl.state.scheduled.find((t) => t.id === 'a')!;
 
-    const p = ctrl.clearTaskDate(a);
+    const p = ctrl.moveToNow(a);
     expect(ctrl.state.scheduled).toEqual([]);
     expect(ctrl.state.grouped.noDate.map((t) => t.id)).toEqual(['a']);
 

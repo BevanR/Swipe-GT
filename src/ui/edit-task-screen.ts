@@ -14,14 +14,14 @@ import { back, navigate } from '../app/router';
 /**
  * The full-viewport "Edit task" screen. It shares the layout language of the Add
  * Task screen (fixed inset, 100dvh flex column, safe-area insets, capped width,
- * a header with Back, a scrollable body, and a sticky footer) but is pre-filled
- * from an existing task and can also delete it.
+ * a header with Back, and a scrollable body) but is pre-filled from an existing
+ * task.
  *
  * The host mounts it for the `#/edit/<listId>/<taskId>` route and passes the
- * task, the user's lists, and `onSave`/`onDelete` callbacks (which wrap
- * `controller.updateTask` / `controller.deleteTask`). On a successful save or
- * delete it navigates back to the list; on failure it stays put (the controller
- * has already surfaced a toast). Back/Cancel returns without saving.
+ * task, the user's lists, and an `onSave` callback (which wraps
+ * `controller.updateTask`). On a successful save it navigates back to the list;
+ * on failure it stays put (the controller has already surfaced a toast).
+ * Back/Cancel returns without saving.
  *
  * Due is chosen from the same chip set as Add (No date + the snooze date options
  * + Pick a date); the chip matching the task's current due starts selected.
@@ -172,19 +172,6 @@ export class EditTaskScreen extends LitElement {
       outline: 2px solid var(--app-accent);
       outline-offset: -1px;
     }
-    footer {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding: 12px 16px;
-      padding-bottom: max(12px, calc(12px + env(safe-area-inset-bottom, 0px)));
-      border-top: 1px solid var(--app-border);
-      background: var(--app-header-bg);
-    }
-    .delete {
-      --md-text-button-label-text-color: var(--app-danger, #c5221f);
-      align-self: center;
-    }
     @media (prefers-reduced-motion: reduce) {
       :host {
         animation: none;
@@ -198,8 +185,6 @@ export class EditTaskScreen extends LitElement {
   @property({ attribute: false }) lists: TaskList[] = [];
   /** Save handler (wraps controller.updateTask); resolves on success. */
   @property({ attribute: false }) onSave?: (changes: TaskUpdateChanges) => Promise<void>;
-  /** Delete handler (wraps controller.deleteTask); resolves on success. */
-  @property({ attribute: false }) onDelete?: () => Promise<void>;
 
   @state() private taskTitle = '';
   @state() private notes = '';
@@ -209,14 +194,11 @@ export class EditTaskScreen extends LitElement {
   /** The date chosen via the "Pick a date" inline input. */
   @state() private pickedDate = '';
   @state() private submitting = false;
-  /** True after the first Delete tap, waiting for a confirming second tap. */
-  @state() private confirmingDelete = false;
 
   /** Due options, computed once per mount from "today". */
   private dueOptions: DueOption[] = buildDueOptions(new Date());
   /** The task id the form was last seeded from (re-seed only on a new task). */
   private seededTaskId: string | null = null;
-  private confirmTimer: ReturnType<typeof setTimeout> | null = null;
 
   @query('input[type="date"]') private dateInput?: HTMLInputElement;
 
@@ -239,12 +221,6 @@ export class EditTaskScreen extends LitElement {
     this.dueKey = sel.key;
     this.pickedDate = sel.pickedDate;
     this.submitting = false;
-    this.confirmingDelete = false;
-  }
-
-  disconnectedCallback(): void {
-    super.disconnectedCallback();
-    if (this.confirmTimer) clearTimeout(this.confirmTimer);
   }
 
   updated(changed: Map<string, unknown>): void {
@@ -313,30 +289,6 @@ export class EditTaskScreen extends LitElement {
     } catch {
       // Stay on the screen; the controller already surfaced an error toast.
       this.submitting = false;
-    }
-  }
-
-  private onDeleteClick(): void {
-    if (!this.confirmingDelete) {
-      // First tap: arm the confirm and auto-disarm after a few seconds.
-      this.confirmingDelete = true;
-      if (this.confirmTimer) clearTimeout(this.confirmTimer);
-      this.confirmTimer = setTimeout(() => (this.confirmingDelete = false), 3200);
-      return;
-    }
-    if (this.confirmTimer) clearTimeout(this.confirmTimer);
-    void this.performDelete();
-  }
-
-  private async performDelete(): Promise<void> {
-    if (this.submitting || !this.onDelete) return;
-    this.submitting = true;
-    try {
-      await this.onDelete();
-      navigate('list');
-    } catch {
-      this.submitting = false;
-      this.confirmingDelete = false;
     }
   }
 
@@ -437,16 +389,6 @@ export class EditTaskScreen extends LitElement {
             : nothing}
           <button type="submit" hidden aria-hidden="true"></button>
         </form>
-
-        <footer>
-          <md-text-button
-            class="delete"
-            ?disabled=${this.submitting}
-            @click=${() => this.onDeleteClick()}
-          >
-            ${this.confirmingDelete ? 'Tap again to delete' : 'Delete task'}
-          </md-text-button>
-        </footer>
       </div>
     `;
   }

@@ -334,29 +334,60 @@ export class AppController extends EventTarget {
   }
 
   /**
-   * Clear a task's due date (the "No date" snooze option). Clearing the date
-   * changes which view the task belongs to — e.g. a Scheduled task becomes a Now
-   * task — so we optimistically remove it from the current view, clear the date
-   * via the API, then re-fetch so it reappears in its new home.
+   * Land a task in the Now view (the "Now" snooze option). Always clears the due
+   * date; additionally, when the task is parked in the Someday list, ejects it
+   * out to the user's default list (`lists[0]`) so it re-partitions into Now
+   * (rather than staying dateless in Someday). Clearing the date / moving lists
+   * changes which view the task belongs to, so we optimistically apply both in
+   * place, hit the API, then re-fetch to reconcile.
    *
-   * Distinct from {@link moveToSomeday}: this ONLY clears the date and never
-   * moves lists (a task already in the Someday list simply stays there, dateless
-   * = the Someday view). Offline is out of scope (like add/someday/edit): we
-   * toast and do NOT enqueue, with no optimistic removal to roll back since we
-   * bail before touching state. Other online failures roll the card back in.
+   * Complement of {@link moveToSomeday}: that one clears the date and moves the
+   * task INTO Someday; this one clears the date and moves it OUT (only when it's
+   * currently in Someday). For a task that just has a due date to clear, no move
+   * happens. When a move IS needed, it runs first (Google rejects moving a
+   * recurring task, so doing it first means such a rejection leaves the task
+   * untouched server-side before we clear the date). Offline is out of scope
+   * (like add/someday/edit): we toast and do NOT enqueue, bailing before any
+   * optimistic change. Other online failures roll the card back in.
    */
-  async clearTaskDate(task: Task): Promise<void> {
+  async moveToNow(task: Task): Promise<void> {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       // Offline is out of scope: do NOT enqueue; just tell the user.
       this.showToast("Can't do that while offline");
       return;
     }
-    // Optimistically clear the date in place: a dateless task shows in Now (or
-    // stays in Someday if it's in the Someday list), so it re-partitions
-    // instantly. The API clear + refresh then reconcile.
-    const prev = this.updateTaskLocal(task.id, { due: null });
+    const somedayListId = this._state.somedayListId;
+    const movingOut = somedayListId != null && task.taskListId === somedayListId;
+    const defaultList = this._state.lists[0];
+    const defaultListId = defaultList?.id;
+    const defaultTitle = defaultList?.title;
+
+    // Optimistically apply in place: clear the date and, when ejecting from
+    // Someday, move to the default list. A dateless task outside Someday shows in
+    // Now, so it re-partitions instantly. The API calls + refresh then reconcile.
+    const localPatch: Partial<Task> = { due: null };
+    if (movingOut && defaultListId) {
+      localPatch.taskListId = defaultListId;
+      localPatch.taskListTitle = defaultTitle ?? '';
+    }
+    const prev = this.updateTaskLocal(task.id, localPatch);
+
     try {
-      await this.api.clearDue(task.taskListId, task.id);
+      if (movingOut && defaultListId) {
+        // Move first (the operation Google rejects for recurring tasks), then
+        // clear the due date on the task at its new home.
+        const moved = await this.api.move(
+          task.taskListId,
+          task.id,
+          defaultListId,
+          defaultTitle,
+        );
+        if (moved.due !== null) {
+          await this.api.clearDue(moved.taskListId, moved.id);
+        }
+      } else {
+        await this.api.clearDue(task.taskListId, task.id);
+      }
       await this.refresh();
     } catch (err) {
       if (err instanceof SilentRenewFailedError) {

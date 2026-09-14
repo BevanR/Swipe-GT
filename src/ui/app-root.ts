@@ -296,8 +296,8 @@ export class AppRoot extends LitElement {
           void this.controller.snoozeTask(e.detail.task, e.detail.due)}
         @task-someday=${(e: CustomEvent<{ task: Task }>) =>
           void this.controller.moveToSomeday(e.detail.task)}
-        @task-nodate=${(e: CustomEvent<{ task: Task }>) =>
-          void this.controller.clearTaskDate(e.detail.task)}
+        @task-now=${(e: CustomEvent<{ task: Task }>) =>
+          void this.controller.moveToNow(e.detail.task)}
         @task-open=${(e: CustomEvent<{ task: Task }>) =>
           navigate('edit', { listId: e.detail.task.taskListId, taskId: e.detail.task.id })}
         @set-view=${(e: CustomEvent<ViewName>) => void this.controller.setView(e.detail)}
@@ -390,7 +390,6 @@ export class AppRoot extends LitElement {
               .lists=${s.lists}
               .onSave=${(changes: TaskUpdateChanges) =>
                 this.controller.updateTask(task, changes)}
-              .onDelete=${() => this.controller.deleteTask(task)}
             ></edit-task-screen>`;
           }
           // Stale/deep-linked hash to a task we don't hold (e.g. it was completed

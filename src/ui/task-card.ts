@@ -594,7 +594,7 @@ export class TaskCard extends LitElement {
 
   /**
    * Slide the front out in `dir` then collapse+dispatch. Used by the snooze /
-   * someday / no-date paths, which commit immediately (no Undo window).
+   * someday / now paths, which commit immediately (no Undo window).
    */
   private flyOutCollapse(dir: 'left' | 'right', dispatch: () => void): void {
     this.slideOut(dir);
@@ -614,8 +614,11 @@ export class TaskCard extends LitElement {
     this.snoozeOptions = computeSnoozeOptions(new Date(), {
       includeToday: !this.isDueToday,
       includeSomeday: this.somedayListId != null && !this.isSomedayTask,
-      // Only offer "No date" when there's actually a due date to clear.
-      includeNoDate: this.task?.due != null,
+      // Offer "Now" unless the task is ALREADY a dateless task in Now — i.e. show
+      // it when the task has a due date to clear OR it's parked in Someday (so it
+      // can be ejected back into Now).
+      includeNow:
+        this.task?.due != null || this.task?.taskListId === this.somedayListId,
     });
     this.snoozeOpen = true;
   }
@@ -638,13 +641,14 @@ export class TaskCard extends LitElement {
       });
       return;
     }
-    // The "No date" option is also dateless, but only CLEARS the due date (it
-    // does not move lists). Dispatch its own DISTINCT event (task-nodate),
-    // separate from both task-someday and the dated task-snooze.
-    if (opt.key === 'nodate') {
+    // The "Now" option is also dateless: it clears the due date and, when the
+    // task is parked in Someday, ejects it back to the default list so it lands
+    // in Now. Dispatch its own DISTINCT event (task-now), separate from both
+    // task-someday and the dated task-snooze.
+    if (opt.key === 'now') {
       this.flyOutCollapse('left', () => {
         this.dispatchEvent(
-          new CustomEvent('task-nodate', {
+          new CustomEvent('task-now', {
             detail: { task: this.task },
             bubbles: true,
             composed: true,
