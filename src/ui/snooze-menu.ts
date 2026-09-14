@@ -8,6 +8,7 @@ import type { SnoozeOption } from '../types';
 import { formatFullDate } from '../logic/dueLabel';
 import { normalizePickedDate } from '../logic/dueOptions';
 import type { MdDialog } from '@material/web/dialog/dialog.js';
+import type { DialogAnimation } from '@material/web/dialog/internal/animations.js';
 
 /**
  * A Material dialog that lists snooze options. Presentational: it renders the
@@ -102,6 +103,101 @@ export class SnoozeMenu extends LitElement {
 
   private dialog(): MdDialog | null {
     return this.renderRoot.querySelector('md-dialog');
+  }
+
+  /**
+   * Override Material's default open/close animations (which slide the dialog
+   * from the TOP and are slow) so the snooze sheet slides UP from the bottom to
+   * open and DOWN to close, quickly. md-dialog lets us swap these via the
+   * `getOpenAnimation()` / `getCloseAnimation()` instance methods; each returns a
+   * {@link DialogAnimation} of Web Animations `[keyframes, options]` tuples per
+   * dialog part. We compute per-invocation so the correct variant is chosen for
+   * the CURRENT viewport (mobile bottom-sheet vs desktop centered dialog) and for
+   * `prefers-reduced-motion` at the moment the dialog opens/closes.
+   */
+  firstUpdated(): void {
+    const d = this.dialog();
+    if (!d) return;
+    d.getOpenAnimation = () => this.dialogAnimation('open');
+    d.getCloseAnimation = () => this.dialogAnimation('close');
+  }
+
+  private prefersReducedMotion(): boolean {
+    return (
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
+  }
+
+  private isMobile(): boolean {
+    return (
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(max-width: 600px)').matches
+    );
+  }
+
+  /**
+   * Build the open/close animation for the current context. Reduced motion ⇒ no
+   * transform animation (the dialog just appears/disappears). Mobile ⇒ the sheet
+   * translates up from / down to the bottom (fast: ~180ms open, ~150ms close).
+   * Desktop (>600px) ⇒ a quick centered fade+scale. The scrim fades to/from its
+   * resting 32% opacity (matching Material's CSS so it doesn't pop at the end).
+   */
+  private dialogAnimation(phase: 'open' | 'close'): DialogAnimation {
+    if (this.prefersReducedMotion()) return {};
+
+    if (this.isMobile()) {
+      if (phase === 'open') {
+        return {
+          container: [
+            [
+              [{ transform: 'translateY(100%)' }, { transform: 'translateY(0)' }],
+              { duration: 180, easing: 'cubic-bezier(0.05, 0.7, 0.1, 1)' },
+            ],
+          ],
+          scrim: [[[{ opacity: 0 }, { opacity: 0.32 }], { duration: 180, easing: 'linear' }]],
+        };
+      }
+      return {
+        container: [
+          [
+            [{ transform: 'translateY(0)' }, { transform: 'translateY(100%)' }],
+            { duration: 150, easing: 'cubic-bezier(0.3, 0, 0.8, 0.15)' },
+          ],
+        ],
+        scrim: [[[{ opacity: 0.32 }, { opacity: 0 }], { duration: 150, easing: 'linear' }]],
+      };
+    }
+
+    // Desktop: quick centered fade + subtle scale.
+    if (phase === 'open') {
+      return {
+        container: [
+          [
+            [
+              { opacity: 0, transform: 'scale(0.95)' },
+              { opacity: 1, transform: 'scale(1)' },
+            ],
+            { duration: 150, easing: 'ease-out' },
+          ],
+        ],
+        scrim: [[[{ opacity: 0 }, { opacity: 0.32 }], { duration: 150, easing: 'linear' }]],
+      };
+    }
+    return {
+      container: [
+        [
+          [
+            { opacity: 1, transform: 'scale(1)' },
+            { opacity: 0, transform: 'scale(0.95)' },
+          ],
+          { duration: 120, easing: 'ease-in' },
+        ],
+      ],
+      scrim: [[[{ opacity: 0.32 }, { opacity: 0 }], { duration: 120, easing: 'linear' }]],
+    };
   }
 
   updated(changed: Map<string, unknown>): void {

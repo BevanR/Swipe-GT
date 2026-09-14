@@ -527,6 +527,36 @@ describe('AppController.moveToNow', () => {
     expect(ctrl.state.toast).toBeTruthy();
     expect(await listMutations()).toHaveLength(0);
   });
+
+  it('toasts when the due date is silently NOT cleared (Google ignores a recurring move)', async () => {
+    const api = makeApi([task('a', localDate(3))]);
+    // Google returns success but silently ignores clearing a recurring task's
+    // due date: nothing throws, yet the date survives the refetch.
+    api.clearDue = vi.fn(async () => {
+      /* silently ignored */
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    const a = ctrl.state.scheduled.find((t) => t.id === 'a')!;
+
+    await ctrl.moveToNow(a);
+
+    // Post-refresh the task still has its due date, so the move didn't take.
+    expect(ctrl.state.allTasks.find((t) => t.id === 'a')?.due).toBe(localDate(3));
+    expect(ctrl.state.toast).toBe("Recurring tasks can't be moved.");
+  });
+
+  it('does NOT toast on the happy path (due date cleared, task reaches Now)', async () => {
+    const api = makeApi([task('a', localDate(3))]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    const a = ctrl.state.scheduled.find((t) => t.id === 'a')!;
+
+    await ctrl.moveToNow(a);
+
+    expect(ctrl.state.grouped.noDate.map((t) => t.id)).toEqual(['a']);
+    expect(ctrl.state.toast).toBeNull();
+  });
 });
 
 describe('AppController.boot', () => {
@@ -747,6 +777,65 @@ describe('AppController.moveToSomeday', () => {
     await ctrl.moveToSomeday(t);
 
     expect(ctrl.state.toast).toBe("Recurring tasks can't be moved to Someday.");
+  });
+
+  it('toasts when the move is silently ignored by Google (post-refresh still not in Someday)', async () => {
+    // Someday is a SEPARATE list (l2); the task lives in l1. Google returns
+    // success for moving/clearing a recurring task but silently ignores it, so
+    // nothing throws — yet the refetch shows the task never left l1.
+    await setConfig({ somedayListId: 'l2' });
+    const lists = [
+      { id: 'l1', title: 'My Tasks' },
+      { id: 'l2', title: 'Someday' },
+    ];
+    const store: Task[] = [
+      {
+        id: 't',
+        taskListId: 'l1',
+        taskListTitle: 'My Tasks',
+        title: 'Task t',
+        due: localDate(0),
+        status: 'needsAction',
+        position: '',
+      },
+    ];
+    const api: ApiLike = {
+      listTaskLists: vi.fn(async () => lists.map((l) => ({ ...l }))),
+      listTasks: vi.fn(async (listId: string) =>
+        store.filter((t) => t.taskListId === listId).map((t) => ({ ...t })),
+      ),
+      insert: vi.fn(),
+      patchDue: vi.fn(),
+      complete: vi.fn(),
+      // Both silently ignored (recurring task): return success, change nothing.
+      clearDue: vi.fn(async () => {}),
+      updateTask: vi.fn(),
+      deleteTask: vi.fn(),
+      move: vi.fn(async () => ({ ...store[0] })),
+    };
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.boot();
+    const t = ctrl.state.grouped.today.find((x) => x.id === 't')!;
+
+    await ctrl.moveToSomeday(t);
+
+    // Never reached Someday; the silent no-op is surfaced.
+    expect(ctrl.state.someday).toEqual([]);
+    expect(ctrl.state.allTasks.find((x) => x.id === 't')?.taskListId).toBe('l1');
+    expect(ctrl.state.toast).toBe("Recurring tasks can't be moved to Someday.");
+  });
+
+  it('does NOT toast on the happy path (task reaches the Someday list, dateless)', async () => {
+    await setConfig({ somedayListId: 'l1' });
+    const api = makeApi([task('t', localDate(0))]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.boot();
+    const t = ctrl.state.grouped.today.find((x) => x.id === 't')!;
+
+    await ctrl.moveToSomeday(t);
+
+    expect(ctrl.state.someday.map((x) => x.id)).toEqual(['t']);
+    expect(ctrl.state.toast).toBeNull();
   });
 });
 

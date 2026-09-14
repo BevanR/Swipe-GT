@@ -314,6 +314,15 @@ export class AppController extends EventTarget {
         await this.api.clearDue(moved.taskListId, moved.id);
       }
       await this.refresh();
+      // Silent no-op guard: Google returns SUCCESS for moving/clearing a
+      // recurring task but silently ignores it, so nothing throws. Verify on the
+      // POST-refresh state that the task actually reached Someday (in the Someday
+      // list, dateless); if it didn't (and it still exists), the move didn't take
+      // — recurrence is the overwhelmingly likely cause. If it's gone, stay quiet.
+      const after = this._state.allTasks.find((t) => t.id === task.id);
+      if (after && (after.taskListId !== somedayListId || after.due != null)) {
+        this.showToast("Recurring tasks can't be moved to Someday.");
+      }
     } catch (err) {
       if (err instanceof SilentRenewFailedError) {
         if (prev) this.revertTasks(prev);
@@ -389,6 +398,19 @@ export class AppController extends EventTarget {
         await this.api.clearDue(task.taskListId, task.id);
       }
       await this.refresh();
+      // Silent no-op guard: Google returns SUCCESS for moving/clearing a
+      // recurring task but silently ignores it, so nothing throws. Verify on the
+      // POST-refresh state that the task actually reached Now: its due date is
+      // cleared AND (when it should have been ejected from Someday) it's no longer
+      // in the Someday list. If it isn't (and it still exists), the change didn't
+      // take — recurrence is the overwhelmingly likely cause. If gone, stay quiet.
+      const after = this._state.allTasks.find((t) => t.id === task.id);
+      if (
+        after &&
+        (after.due != null || (movingOut && after.taskListId === somedayListId))
+      ) {
+        this.showToast("Recurring tasks can't be moved.");
+      }
     } catch (err) {
       if (err instanceof SilentRenewFailedError) {
         if (prev) this.revertTasks(prev);
