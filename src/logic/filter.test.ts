@@ -3,14 +3,18 @@ import type { Task } from '../types';
 import { filterAndGroup } from './filter';
 
 /** Build a minimal Task with a given id + due date for grouping tests. */
-function task(id: string, due: string | null): Task {
+function task(
+  id: string,
+  due: string | null,
+  status: Task['status'] = 'needsAction',
+): Task {
   return {
     id,
     taskListId: 'list-1',
     taskListTitle: 'List 1',
     title: `Task ${id}`,
     due,
-    status: 'needsAction',
+    status,
   };
 }
 
@@ -123,6 +127,21 @@ describe('filterAndGroup', () => {
     expect(ids(result.today)).toEqual(['sameDay']);
     expect(ids(result.overdue)).toEqual(['yesterday']);
     expect(ids(result.today)).not.toContain('tomorrow');
+  });
+
+  it('excludes completed tasks regardless of due date', () => {
+    const result = filterAndGroup(
+      [
+        task('doneOverdue', '2026-06-14', 'completed'),
+        task('doneToday', '2026-06-15', 'completed'),
+        task('doneNoDate', null, 'completed'),
+        task('openToday', '2026-06-15', 'needsAction'),
+      ],
+      TODAY,
+    );
+    expect(ids(result.overdue)).toEqual([]);
+    expect(ids(result.today)).toEqual(['openToday']);
+    expect(ids(result.noDate)).toEqual([]);
   });
 
   it('defaults today to the current date when omitted', () => {

@@ -3,9 +3,12 @@ import type { GroupedTasks, Task } from '../types';
 /**
  * Filter tasks down to those relevant "now" and group them for display.
  *
- * Inclusion rule: a task is included if its `due` is null (no date) OR its due
- * date is on/before `today` (i.e. `due <= today`). Tasks due strictly in the
- * future are excluded.
+ * Inclusion rule: a task is included only if it is still actionable
+ * (`status === 'needsAction'`) AND its `due` is null (no date) OR its due date
+ * is on/before `today` (i.e. `due <= today`). Completed tasks and tasks due
+ * strictly in the future are excluded. The status guard is defensive: the API
+ * client requests `showCompleted=false`, but a task completed offline can still
+ * linger in a cached snapshot until the next successful refetch.
  *
  * Grouping:
  *  - `overdue`: due date strictly before today.
@@ -29,6 +32,11 @@ export function filterAndGroup(tasks: Task[], today: Date = new Date()): Grouped
   const noDate: Task[] = [];
 
   for (const task of tasks) {
+    // Never surface completed tasks, whatever their due date.
+    if (task.status !== 'needsAction') {
+      continue;
+    }
+
     if (task.due === null) {
       noDate.push(task);
       continue;
