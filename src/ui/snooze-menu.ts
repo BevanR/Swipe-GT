@@ -37,8 +37,8 @@ export class SnoozeMenu extends LitElement {
     }
   `;
 
-  @property({ type: Array }) accessor options: SnoozeOption[] = [];
-  @property({ type: Boolean }) accessor open = false;
+  @property({ type: Array }) options: SnoozeOption[] = [];
+  @property({ type: Boolean }) open = false;
 
   private dialog(): MdDialog | null {
     return this.renderRoot.querySelector('md-dialog');

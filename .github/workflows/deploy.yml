@@ -40,6 +40,17 @@ jobs:
           # -> Actions -> Variables), not a secret.
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
 
+      # Install the browser used by the headless smoke check.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Fail the workflow (so nothing deploys) if the built site does not render
+      # or throws any console error / uncaught exception / failed request.
+      # This is the gate that catches the "Invalid or unexpected token" class of
+      # crash (untranspiled decorator/accessor syntax reaching the browser).
+      - name: Smoke test built site
+        run: npm run smoke
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 

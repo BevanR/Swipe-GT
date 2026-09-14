@@ -120,15 +120,15 @@ export class TaskListView extends LitElement {
     }
   `;
 
-  @property({ attribute: false }) accessor grouped: GroupedTasks = {
+  @property({ attribute: false }) grouped: GroupedTasks = {
     overdue: [],
     today: [],
     noDate: [],
   };
-  @property({ type: Boolean }) accessor offline = false;
-  @property({ type: Boolean }) accessor fromCache = false;
-  @property({ type: Boolean }) accessor loading = false;
-  @property({ type: Number }) accessor fetchedAt: number | null = null;
+  @property({ type: Boolean }) offline = false;
+  @property({ type: Boolean }) fromCache = false;
+  @property({ type: Boolean }) loading = false;
+  @property({ type: Number }) fetchedAt: number | null = null;
 
   private get isEmpty(): boolean {
     const { overdue, today, noDate } = this.grouped;

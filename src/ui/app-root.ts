@@ -40,8 +40,8 @@ export class AppRoot extends LitElement {
     }
   `;
 
-  @property({ attribute: false }) accessor controller!: AppController;
-  @state() private accessor st!: AppState;
+  @property({ attribute: false }) controller!: AppController;
+  @state() private st!: AppState;
 
   private onChange = () => {
     this.st = this.controller.state;

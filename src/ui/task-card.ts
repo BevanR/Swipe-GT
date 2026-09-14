@@ -109,12 +109,12 @@ export class TaskCard extends LitElement {
     }
   `;
 
-  @property({ attribute: false }) accessor task!: Task;
+  @property({ attribute: false }) task!: Task;
 
-  @state() private accessor offset = 0;
-  @state() private accessor animating = false;
-  @state() private accessor snoozeOpen = false;
-  @state() private accessor snoozeOptions: SnoozeOption[] = [];
+  @state() private offset = 0;
+  @state() private animating = false;
+  @state() private snoozeOpen = false;
+  @state() private snoozeOptions: SnoozeOption[] = [];
 
   private dragging = false;
   private axis: 'none' | 'h' | 'v' = 'none';

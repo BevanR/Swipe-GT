@@ -1,7 +1,16 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "useDefineForClassFields": true,
+    /* Lit decorators use TypeScript's experimental (legacy) decorators, which
+       every transpiler in this toolchain (tsc, and Vite 8's rolldown/Oxc)
+       reliably lowers to browser-safe JS. The TC39 standard-decorator syntax
+       (the `accessor` keyword) is NOT lowered by rolldown/Oxc and would leak
+       raw `accessor`/`@dec` tokens into the bundle, crashing the page with
+       "Uncaught SyntaxError: Invalid or unexpected token". With experimental
+       decorators, useDefineForClassFields MUST be false so the field
+       definitions don't clobber Lit's reactive-property accessors. */
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
     "module": "ESNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
