@@ -98,21 +98,19 @@ scripts/
 
 ## Backlog (not yet built)
 
-In-flight / next up (in order):
-- **Add-task route** — full-viewport route (`#/add`, hash routing) replacing the modal; due chosen from the snooze options + a "Pick a date" option (default No date); defaults to the Google default list.
-- **"Pick a date"** option in every postpone/snooze menu (native date input).
-- **Reduced-motion + snappy animations** — honor `prefers-reduced-motion`; make transitions fast/immediate.
-- **Edit-task route** — own full-viewport route (not inline), reusing the add-task routing.
-- **Undo in the gap** — the collapsed row holds an Undo for ~2s before collapsing (complete/snooze).
-- **Keyboard shortcuts** — add task, navigate views/lists, up/down tasks, postpone, complete, search, undo.
-
 Later / needs design:
 - **Drag-drop reorder** of no-date tasks (persist to Google via `move`).
 - **Desktop view** — broader deliberate design pass (mobile-first today; Inbox theme reads well on desktop).
-- **Star** — removed. The public Tasks API has no starred field; Google's native star uses a private API we can't use. Revisit only if Google exposes it publicly.
 - Dark-mode visual polish.
 
-Done since v1: relative/friendly dates, Scheduled bucketing, star removal, Inbox-theme fix, cog centering, add-task FAB (+ default list), snooze RHS button, mobile density, Material serif-font fix, broaden "Today", client-side search, Someday list + three-view model (Now/Scheduled/Someday), list name off cards.
+Blocked by the public Google Tasks API (would need Google to expose it, or a backend proxying the private API — out of scope for this static PWA):
+- **Recurring-task loop icon** and **hiding "Someday" on repeating tasks** — the API exposes no recurrence field. We only learn a task is recurring when Google *rejects* the cross-list move; that failure now shows a clear toast.
+- **Due time-of-day** (showing/selecting a time) — the API stores date only and normalizes any time to midnight.
+- **Star** — removed. The API has no starred field; Google's native star uses a private API. Revisit only if Google exposes it publicly.
+
+Done since v1: relative/friendly dates, Scheduled bucketing, star removal, Inbox-theme fix, cog centering, add-task FAB, snooze RHS button, mobile density, Material serif-font fix, broaden "Today", client-side search, Someday list + three-view model (Now/Scheduled/Someday), list name off cards, cheerful stable empty states, add-task route (full-viewport, due dropdown incl. Someday, action in header), edit-task route (tap to edit; title/notes/due/move/delete), "Pick a date" everywhere (opens picker directly), postpone bottom-sheet, "No date" postpone, dark-mode dropdown fix, Scheduled per-card dates only in range buckets, instant optimistic cross-view moves, snappy + reduced-motion, undo-in-the-gap on complete, desktop keyboard shortcuts + selection + help overlay.
+
+Open decisions the user may revisit: "No date" on a Someday-list task keeps it in Someday (doesn't move it out); the edit screen has a Delete action.
 
 ## Testing notes
 
