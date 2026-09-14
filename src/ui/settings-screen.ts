@@ -108,8 +108,8 @@ export class SettingsScreen extends LitElement {
     }
   `;
 
-  @property() accessor theme: ThemeName = 'inbox';
-  @property({ attribute: false }) accessor lists: TaskList[] = [];
+  @property() theme: ThemeName = 'inbox';
+  @property({ attribute: false }) lists: TaskList[] = [];
 
   private setTheme(theme: ThemeName): void {
     this.dispatchEvent(

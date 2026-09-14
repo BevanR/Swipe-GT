@@ -63,8 +63,8 @@ export class ConnectScreen extends LitElement {
     }
   `;
 
-  @property({ type: Boolean }) accessor error = false;
-  @property({ type: Boolean }) accessor busy = false;
+  @property({ type: Boolean }) error = false;
+  @property({ type: Boolean }) busy = false;
 
   private connect(): void {
     this.dispatchEvent(new CustomEvent('connect', { bubbles: true, composed: true }));
