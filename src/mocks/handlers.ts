@@ -118,10 +118,30 @@ export const handlers = [
     if (!task) {
       return HttpResponse.json({ error: { code: 404, message: 'Task not found' } }, { status: 404 });
     }
-    const body = (await request.json()) as Partial<GoogleTaskResource>;
-    if (typeof body.due === 'string') task.due = body.due;
+    const body = (await request.json()) as Partial<GoogleTaskResource> & { due?: string | null };
+    // An explicit `due: null` clears the date (clearDue); a string sets it.
+    if (body.due === null) delete task.due;
+    else if (typeof body.due === 'string') task.due = body.due;
     if (body.status === 'completed' || body.status === 'needsAction') task.status = body.status;
     if (typeof body.notes === 'string') task.notes = body.notes;
+    return HttpResponse.json(task);
+  }),
+
+  // POST move a task to another list (destinationTasklist query param)
+  http.post(`${BASE}/lists/:listId/tasks/:taskId/move`, ({ request, params }) => {
+    const unauth = requireAuth(request);
+    if (unauth) return unauth;
+    const listId = params.listId as string;
+    const taskId = params.taskId as string;
+    const url = new URL(request.url);
+    const dest = url.searchParams.get('destinationTasklist');
+    const list = tasksByList[listId];
+    const idx = list ? list.findIndex((t) => t.id === taskId) : -1;
+    if (!list || idx === -1 || !dest) {
+      return HttpResponse.json({ error: { code: 404, message: 'Task not found' } }, { status: 404 });
+    }
+    const [task] = list.splice(idx, 1);
+    (tasksByList[dest] ??= []).push(task);
     return HttpResponse.json(task);
   }),
 ];

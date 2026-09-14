@@ -39,10 +39,48 @@ describe('config', () => {
   });
 
   it('merges stored config over defaults for absent keys', async () => {
-    await setConfig({ listInclusion: { l1: false } });
+    await setConfig({ somedayListId: 'list-x' });
     const cfg = await getConfig();
-    expect(cfg.listInclusion).toEqual({ l1: false });
+    expect(cfg.somedayListId).toBe('list-x');
     expect(cfg.theme).toBe('tasks'); // default
+  });
+});
+
+describe('config migration', () => {
+  it('migrates a legacy view "default" → "now"', async () => {
+    await setConfig({ view: 'default' as unknown as 'now' });
+    expect((await getConfig()).view).toBe('now');
+  });
+
+  it('migrates a legacy view "future" → "scheduled"', async () => {
+    await setConfig({ view: 'future' as unknown as 'now' });
+    expect((await getConfig()).view).toBe('scheduled');
+  });
+
+  it('falls back to "now" for an unknown/stale view', async () => {
+    await setConfig({ view: 'starred' as unknown as 'now' });
+    expect((await getConfig()).view).toBe('now');
+  });
+
+  it('keeps a valid current view unchanged', async () => {
+    await setConfig({ view: 'someday' });
+    expect((await getConfig()).view).toBe('someday');
+  });
+
+  it('drops a legacy listInclusion field and defaults somedayListId to null', async () => {
+    // Simulate an old build that persisted listInclusion (no longer in AppConfig).
+    await setConfig({ listInclusion: { l1: false } } as unknown as Partial<
+      Parameters<typeof setConfig>[0]
+    >);
+    const cfg = await getConfig();
+    expect('listInclusion' in cfg).toBe(false);
+    expect(cfg.somedayListId).toBeNull();
+  });
+
+  it('tolerates a somedayListId for a list that no longer exists', async () => {
+    await setConfig({ somedayListId: 'gone' });
+    // Read back verbatim; treating it as "none" happens at partition/render time.
+    expect((await getConfig()).somedayListId).toBe('gone');
   });
 });
 
@@ -57,7 +95,7 @@ describe('snapshot', () => {
       tasks: [
         { id: 't1', taskListId: 'l1', taskListTitle: 'L1', title: 'A', due: null, status: 'needsAction', position: '' },
       ],
-      lists: [{ id: 'l1', title: 'L1', included: true }],
+      lists: [{ id: 'l1', title: 'L1' }],
     };
     await setSnapshot(snap);
     expect(await getSnapshot()).toEqual(snap);

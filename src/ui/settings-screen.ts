@@ -1,13 +1,13 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
-import '@material/web/checkbox/checkbox.js';
+import '@material/web/select/outlined-select.js';
+import '@material/web/select/select-option.js';
 import '@material/web/button/outlined-button.js';
-import type { MdCheckbox } from '@material/web/checkbox/checkbox.js';
 import type { TaskList, ThemeName } from '../types';
 
 /**
- * Settings: theme toggle, per-list inclusion, and disconnect. Presentational —
- * dispatches `set-theme`, `set-inclusion`, `disconnect`, and `close`.
+ * Settings: theme toggle, Someday-list picker, and disconnect. Presentational —
+ * dispatches `set-theme`, `set-someday`, `disconnect`, and `close`.
  */
 @customElement('settings-screen')
 export class SettingsScreen extends LitElement {
@@ -103,6 +103,9 @@ export class SettingsScreen extends LitElement {
       color: var(--app-on-surface-muted);
       font-size: 0.85rem;
     }
+    md-outlined-select {
+      width: 100%;
+    }
     md-outlined-button {
       --md-sys-color-primary: var(--app-danger);
     }
@@ -110,6 +113,8 @@ export class SettingsScreen extends LitElement {
 
   @property() theme: ThemeName = 'inbox';
   @property({ attribute: false }) lists: TaskList[] = [];
+  /** The currently-designated Someday list id, or null when none is chosen. */
+  @property({ attribute: false }) somedayListId: string | null = null;
 
   private setTheme(theme: ThemeName): void {
     this.dispatchEvent(
@@ -117,11 +122,24 @@ export class SettingsScreen extends LitElement {
     );
   }
 
-  private toggleInclusion(list: TaskList, e: Event): void {
-    const cb = e.target as MdCheckbox;
+  /**
+   * The select's effective value: the configured Someday list id when it still
+   * matches a real list, otherwise '' ("None"). A stored id for a list that no
+   * longer exists is tolerated and shown as None.
+   */
+  private currentSomedayValue(): string {
+    if (this.somedayListId && this.lists.some((l) => l.id === this.somedayListId)) {
+      return this.somedayListId;
+    }
+    return '';
+  }
+
+  private onSomedayChange(e: Event): void {
+    const value = (e.target as HTMLSelectElement).value;
     this.dispatchEvent(
-      new CustomEvent('set-inclusion', {
-        detail: { id: list.id, included: cb.checked },
+      new CustomEvent('set-someday', {
+        // The "None" option has an empty value → null (no Someday list).
+        detail: value === '' ? null : value,
         bubbles: true,
         composed: true,
       }),
@@ -162,22 +180,31 @@ export class SettingsScreen extends LitElement {
         </section>
 
         <section>
-          <h2>Lists</h2>
+          <h2>Someday list</h2>
           ${this.lists.length === 0
             ? html`<div class="empty-lists">No task lists loaded yet.</div>`
-            : this.lists.map(
-                (list) => html`
-                  <div class="row">
-                    <label id=${`lbl-${list.id}`}>${list.title}</label>
-                    <md-checkbox
-                      aria-labelledby=${`lbl-${list.id}`}
-                      ?checked=${list.included}
-                      @change=${(e: Event) => this.toggleInclusion(list, e)}
-                    ></md-checkbox>
-                  </div>
-                `,
-              )}
-          <p class="note">Unchecked lists are hidden from the swipe view.</p>
+            : html`<md-outlined-select
+                label="Someday list"
+                aria-label="Someday list"
+                .value=${this.currentSomedayValue()}
+                @change=${(e: Event) => this.onSomedayChange(e)}
+              >
+                <md-select-option value="" ?selected=${this.currentSomedayValue() === ''}>
+                  <div slot="headline">None</div>
+                </md-select-option>
+                ${this.lists.map(
+                  (list) => html`<md-select-option
+                    value=${list.id}
+                    ?selected=${list.id === this.currentSomedayValue()}
+                  >
+                    <div slot="headline">${list.title}</div>
+                  </md-select-option>`,
+                )}
+              </md-outlined-select>`}
+          <p class="note">
+            Dateless tasks in the Someday list are parked in the Someday view, out of
+            your Now list. Choose "None" to keep every dateless task in Now.
+          </p>
         </section>
 
         <section>

@@ -24,11 +24,15 @@ import type { SnoozeOption } from '../types';
  *              (pull the task onto today) is prepended. Callers set this whenever
  *              the task is NOT already due exactly today — i.e. for overdue,
  *              future, and no-date tasks — and leave it false only when the due
- *              date already IS today (where "Today" would be a no-op).
+ *              date already IS today (where "Today" would be a no-op). When
+ *              `opts.includeSomeday` is true, a special dateless `someday` option
+ *              is appended (park the task in the Someday list); its `date` is
+ *              null. Callers set this only when a Someday list is configured and
+ *              the task isn't already a dateless Someday-list task.
  */
 export function computeSnoozeOptions(
   today: Date = new Date(),
-  opts?: { includeToday?: boolean },
+  opts?: { includeToday?: boolean; includeSomeday?: boolean },
 ): SnoozeOption[] {
   // Local calendar anchor at local midnight; `getDay()` gives 0=Sun..6=Sat.
   const year = today.getFullYear();
@@ -87,6 +91,11 @@ export function computeSnoozeOptions(
     label: 'Next month',
     date: toLocalDateString(new Date(year, month + 1, 1)),
   });
+
+  // 6. Someday — a dateless park option, appended last. Has no date.
+  if (opts?.includeSomeday) {
+    options.push({ key: 'someday', label: 'Someday', date: null });
+  }
 
   return options;
 }

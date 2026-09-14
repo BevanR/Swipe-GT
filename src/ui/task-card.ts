@@ -183,11 +183,6 @@ export class TaskCard extends LitElement {
       color: var(--app-warning);
       font-weight: 600;
     }
-    .list {
-      font-size: 0.72rem;
-      color: var(--app-on-surface-muted);
-      opacity: 0.85;
-    }
     .notes {
       margin-top: 2px;
       font-size: 0.8rem;
@@ -200,6 +195,8 @@ export class TaskCard extends LitElement {
   `;
 
   @property({ attribute: false }) task!: Task;
+  /** The designated Someday list id (or null); threaded from the controller. */
+  @property({ attribute: false }) somedayListId: string | null = null;
 
   @state() private offset = 0;
   @state() private animating = false;
@@ -231,6 +228,18 @@ export class TaskCard extends LitElement {
     const due = this.task?.due;
     if (!due) return false;
     return due.slice(0, 10) === this.todayStr();
+  }
+
+  /**
+   * True when this task is already a dateless task in the Someday list — the one
+   * case where the "Someday" snooze option is pointless (it's already there).
+   */
+  private get isSomedayTask(): boolean {
+    return (
+      this.somedayListId != null &&
+      this.task?.due == null &&
+      this.task?.taskListId === this.somedayListId
+    );
   }
 
   /** Today's local calendar date as 'YYYY-MM-DD'. */
@@ -370,14 +379,32 @@ export class TaskCard extends LitElement {
   private openSnooze(): void {
     // Spring the card back to rest, then raise the menu.
     this.offset = 0;
-    this.snoozeOptions = computeSnoozeOptions(new Date(), { includeToday: !this.isDueToday });
+    this.snoozeOptions = computeSnoozeOptions(new Date(), {
+      includeToday: !this.isDueToday,
+      includeSomeday: this.somedayListId != null && !this.isSomedayTask,
+    });
     this.snoozeOpen = true;
   }
 
   private onSnoozePick = (e: CustomEvent<SnoozeOption>) => {
     e.stopPropagation();
     this.snoozeOpen = false;
-    const due = e.detail.date;
+    const opt = e.detail;
+    // The "Someday" option is dateless and parks the task — dispatch a DISTINCT
+    // event (task-someday) rather than task-snooze (which carries a due date).
+    if (opt.key === 'someday') {
+      this.flyOutCollapse('left', () => {
+        this.dispatchEvent(
+          new CustomEvent('task-someday', {
+            detail: { task: this.task },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      });
+      return;
+    }
+    const due = opt.date as string;
     this.flyOutCollapse('left', () => {
       this.dispatchEvent(
         new CustomEvent('task-snooze', {
@@ -443,7 +470,6 @@ export class TaskCard extends LitElement {
                   >${formatDueLabel(due, new Date())}</span
                 >`
               : ''}
-            <span class="list">${this.task?.taskListTitle}</span>
           </div>
           ${this.task?.notes ? html`<div class="notes">${this.task.notes}</div>` : ''}
         </div>

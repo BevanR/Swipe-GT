@@ -163,6 +163,62 @@ export class TasksApi {
     );
   }
 
+  /**
+   * Clear a task's due date (make it dateless) — used when parking a task to the
+   * Someday list. Implemented as a PATCH with an explicit `due: null` body,
+   * which is the documented JSON way to unset a field on a task resource.
+   *
+   * NOTE: Google Tasks has historically been finicky about clearing `due` — some
+   * clients report that `due: null` via PATCH is ignored and fall back to a full
+   * `tasks.update` (PUT) with `due` omitted. We deliberately use PATCH+null here;
+   * the real-API behaviour of clearing a date will be verified manually by the
+   * user. If PATCH proves unreliable in production, switch to a PUT of the whole
+   * task with `due` omitted.
+   */
+  async clearDue(taskListId: string, taskId: string): Promise<void> {
+    await this.request(
+      `/lists/${encodeURIComponent(taskListId)}/tasks/${encodeURIComponent(taskId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ due: null }),
+      },
+    );
+  }
+
+  /**
+   * Move a task to another task list via the Tasks `move` endpoint. Google
+   * returns the moved task as it now exists in the destination list; we map it
+   * to our {@link Task} shape with `taskListId` set to the destination list id.
+   *
+   * Note: Google rejects moving a recurring task between lists — the request
+   * fails and {@link request} throws; the caller decides how to surface that.
+   */
+  async move(
+    taskListId: string,
+    taskId: string,
+    destinationTasklist: string,
+    destinationTitle?: string,
+  ): Promise<Task> {
+    const query = new URLSearchParams({ destinationTasklist });
+    const res = await this.request(
+      `/lists/${encodeURIComponent(taskListId)}/tasks/${encodeURIComponent(
+        taskId,
+      )}/move?${query.toString()}`,
+      { method: 'POST' },
+    );
+    const item = (await res.json()) as GoogleTask;
+    return {
+      id: item.id,
+      taskListId: destinationTasklist,
+      taskListTitle: destinationTitle ?? '',
+      title: item.title ?? '',
+      due: item.due ? item.due.slice(0, 10) : null,
+      status: item.status ?? 'needsAction',
+      position: item.position ?? '',
+      ...(item.notes != null ? { notes: item.notes } : {}),
+    };
+  }
+
   /** Mark a task completed. */
   async complete(taskListId: string, taskId: string): Promise<void> {
     await this.request(

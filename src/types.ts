@@ -21,19 +21,18 @@ export interface Task {
 export interface TaskList {
   id: string;
   title: string;
-  included: boolean; // local-only preference
 }
 
 export type ThemeName = 'inbox' | 'tasks';
 
 /**
- * Which display view the list is showing. Both views render the same flat card
- * list from the already-fetched task set; they only differ in how tasks are
- * filtered at display time:
- *  - `default`: overdue + today + no-date (via filterAndGroup).
- *  - `future`:  tasks due strictly after today, sorted ascending.
+ * Which display view the list is showing. Every non-completed task lives in
+ * EXACTLY ONE view (see logic/views.ts for the partition):
+ *  - `now`:       overdue OR due today OR (no due date AND not in the Someday list).
+ *  - `scheduled`: any future due date (any list).
+ *  - `someday`:   in the Someday list AND no due date.
  */
-export type ViewName = 'default' | 'future';
+export type ViewName = 'now' | 'scheduled' | 'someday';
 
 export interface AuthState {
   accessToken: string;
@@ -41,11 +40,16 @@ export interface AuthState {
 }
 
 export interface AppConfig {
-  listInclusion: Record<string, boolean>; // taskListId -> included; absent id defaults to true
   theme: ThemeName;
   auth: AuthState | null;
   /** The persisted display view. */
   view: ViewName;
+  /**
+   * The task list designated as the user's "Someday" list, or null when none is
+   * chosen. Dateless tasks in this list are parked in the Someday view. A value
+   * for a list that no longer exists is tolerated (treated as "none").
+   */
+  somedayListId: string | null;
 }
 
 export type TaskGroupKey = 'overdue' | 'today' | 'noDate';
@@ -62,12 +66,17 @@ export type SnoozeOptionKey =
   | 'laterThisWeek'
   | 'thisWeekend'
   | 'nextWeek'
-  | 'nextMonth';
+  | 'nextMonth'
+  | 'someday';
 
 export interface SnoozeOption {
   key: SnoozeOptionKey;
   label: string;
-  date: string; // RFC3339 date the task's due will be set to
+  /**
+   * RFC3339 date the task's due will be set to, or null for the special
+   * "Someday" option, which carries no date (it parks the task instead).
+   */
+  date: string | null;
 }
 
 export type MutationType = 'complete' | 'snooze';

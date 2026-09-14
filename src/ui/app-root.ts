@@ -68,13 +68,15 @@ export class AppRoot extends LitElement {
         @open-settings=${() => this.controller.openSettings()}
         @close=${() => this.controller.closeSettings()}
         @set-theme=${(e: CustomEvent<ThemeName>) => void this.controller.setTheme(e.detail)}
-        @set-inclusion=${(e: CustomEvent<{ id: string; included: boolean }>) =>
-          void this.controller.setInclusion(e.detail.id, e.detail.included)}
+        @set-someday=${(e: CustomEvent<string | null>) =>
+          void this.controller.setSomedayList(e.detail)}
         @disconnect=${() => void this.controller.disconnect()}
         @task-complete=${(e: CustomEvent<{ task: Task }>) =>
           void this.controller.completeTask(e.detail.task)}
         @task-snooze=${(e: CustomEvent<{ task: Task; due: string }>) =>
           void this.controller.snoozeTask(e.detail.task, e.detail.due)}
+        @task-someday=${(e: CustomEvent<{ task: Task }>) =>
+          void this.controller.moveToSomeday(e.detail.task)}
         @set-view=${(e: CustomEvent<ViewName>) => void this.controller.setView(e.detail)}
       >
         ${this.renderScreen(s)}
@@ -97,13 +99,17 @@ export class AppRoot extends LitElement {
         return html`<settings-screen
           .theme=${s.theme}
           .lists=${s.lists}
+          .somedayListId=${s.somedayListId}
         ></settings-screen>`;
       case 'list':
       default:
         return html`<task-list-view
           .grouped=${s.grouped}
+          .scheduled=${s.scheduled}
+          .someday=${s.someday}
           .allTasks=${s.allTasks}
           .view=${s.view}
+          .somedayListId=${s.somedayListId}
           ?offline=${s.offline}
           ?fromCache=${s.fromCache}
           ?loading=${s.loading}

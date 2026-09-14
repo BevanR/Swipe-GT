@@ -7,7 +7,7 @@ import {
   setSnapshot,
 } from '../storage/db';
 import { drainQueue, enqueueMutation } from '../pwa/offlineQueue';
-import { filterAndGroup } from '../logic/filter';
+import { partitionViews } from '../logic/views';
 import type {
   Task,
   TaskList,
@@ -34,12 +34,29 @@ export interface ApiLike {
   ): Promise<Task>;
   patchDue(taskListId: string, taskId: string, due: string): Promise<void>;
   complete(taskListId: string, taskId: string): Promise<void>;
+  clearDue(taskListId: string, taskId: string): Promise<void>;
+  move(
+    taskListId: string,
+    taskId: string,
+    destinationTasklist: string,
+    destinationTitle?: string,
+  ): Promise<Task>;
 }
 
 /** Remembers where a task lived so an online failure can roll it back in. */
 interface RemovedTask {
   task: Task;
   index: number;
+}
+
+/**
+ * Heuristic: does this error look like Google refusing to MOVE a recurring task
+ * between lists? The REST client throws an Error whose message includes the raw
+ * Google error body, which mentions recurrence for this case.
+ */
+function isRecurringMoveError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /recurr/i.test(msg);
 }
 
 /**
@@ -82,6 +99,7 @@ export class AppController extends EventTarget {
     this.patch({
       theme: cfg.theme,
       view: cfg.view,
+      somedayListId: cfg.somedayListId,
     });
     this.wireRefreshTriggers();
 
@@ -111,6 +129,8 @@ export class AppController extends EventTarget {
     this.patch({
       screen: 'connect',
       grouped: EMPTY_GROUPS,
+      scheduled: [],
+      someday: [],
       allTasks: [],
       lists: [],
       fetchedAt: null,
@@ -121,16 +141,15 @@ export class AppController extends EventTarget {
 
   // --- loading -------------------------------------------------------------
 
-  /** Fetch lists + tasks, filter/group, cache, and render. */
+  /** Fetch all lists + tasks, partition into views, cache, and render. */
   async load(): Promise<void> {
     this.patch({ loading: true });
     try {
       const rawLists = await this.api.listTaskLists();
-      const lists = await this.reconcileInclusion(rawLists);
+      const lists: TaskList[] = rawLists.map((l) => ({ id: l.id, title: l.title }));
 
       const tasks: Task[] = [];
       for (const list of lists) {
-        if (!list.included) continue;
         const listTasks = await this.api.listTasks(list.id, list.title);
         tasks.push(...listTasks);
       }
@@ -139,16 +158,15 @@ export class AppController extends EventTarget {
       await setSnapshot({ fetchedAt, tasks, lists });
 
       this.patch({
-        allTasks: tasks,
-        grouped: filterAndGroup(tasks),
         lists,
         fetchedAt,
         fromCache: false,
         offline: false,
         loading: false,
       });
+      this.setTasks(tasks);
       // Only jump to the list screen from loading/connect; keep settings open
-      // if the user is there (an inclusion change re-runs load in the background).
+      // if the user is there (a settings change re-runs load in the background).
       if (this._state.screen === 'loading' || this._state.screen === 'connect') {
         this.patch({ screen: 'list' });
       }
@@ -169,14 +187,13 @@ export class AppController extends EventTarget {
     if (offline && snapshot) {
       this.patch({
         screen: this._state.screen === 'connect' ? 'list' : this._state.screen,
-        allTasks: snapshot.tasks,
-        grouped: filterAndGroup(snapshot.tasks),
         lists: snapshot.lists,
         fetchedAt: snapshot.fetchedAt,
         fromCache: true,
         offline: true,
         loading: false,
       });
+      this.setTasks(snapshot.tasks);
       if (this._state.screen === 'loading') this.patch({ screen: 'list' });
       return;
     }
@@ -186,30 +203,6 @@ export class AppController extends EventTarget {
       // Nothing to show and no cache — offer reconnect as a last resort.
       this.patch({ screen: 'list' });
     }
-  }
-
-  /**
-   * For any list id not present in config.listInclusion, default it to included
-   * and persist (never auto-exclude). Returns the TaskList[] with `included`.
-   */
-  private async reconcileInclusion(
-    rawLists: { id: string; title: string }[],
-  ): Promise<TaskList[]> {
-    const cfg = await getConfig();
-    const inclusion = { ...cfg.listInclusion };
-    let changed = false;
-    for (const l of rawLists) {
-      if (!(l.id in inclusion)) {
-        inclusion[l.id] = true;
-        changed = true;
-      }
-    }
-    if (changed) await setConfig({ listInclusion: inclusion });
-    return rawLists.map((l) => ({
-      id: l.id,
-      title: l.title,
-      included: inclusion[l.id] !== false,
-    }));
   }
 
   // --- mutations (optimistic) ---------------------------------------------
@@ -250,8 +243,59 @@ export class AppController extends EventTarget {
   }
 
   /**
-   * Create a new task, then re-fetch so it lands in the correct view (default
-   * if due today/overdue/none, Scheduled if future). Requires connectivity and
+   * Park a task in the Someday list: clear its due date and move it into the
+   * designated Someday list, so it lands in the Someday view. Requires a
+   * configured `somedayListId` and connectivity.
+   *
+   * Order: move first, then clear the due date. Moving between lists is the
+   * operation Google rejects for recurring tasks, so doing it first means such a
+   * rejection leaves the task fully untouched server-side (a clean rollback)
+   * before we ever change the due date.
+   *
+   * Offline move is out of scope: when offline we surface a toast and do NOT
+   * enqueue (unlike complete/snooze).
+   */
+  async moveToSomeday(task: Task): Promise<void> {
+    const somedayListId = this._state.somedayListId;
+    if (!somedayListId) {
+      this.showToast('Choose a Someday list in Settings first.');
+      return;
+    }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      // Offline move is out of scope: do NOT enqueue; just tell the user.
+      this.showToast("Can't move to Someday while offline");
+      return;
+    }
+    const somedayTitle = this._state.lists.find((l) => l.id === somedayListId)?.title;
+    const removed = this.removeTask(task.id);
+    try {
+      const moved = await this.api.move(
+        task.taskListId,
+        task.id,
+        somedayListId,
+        somedayTitle,
+      );
+      if (moved.due !== null) {
+        await this.api.clearDue(moved.taskListId, moved.id);
+      }
+      await this.refresh();
+    } catch (err) {
+      if (err instanceof SilentRenewFailedError) {
+        this.patch({ screen: 'connect', connectError: false });
+        return;
+      }
+      if (removed) this.restoreTask(removed);
+      if (isRecurringMoveError(err)) {
+        this.showToast("Recurring tasks can't be moved to Someday.");
+      } else {
+        this.showToast('Could not move to Someday. Try again.');
+      }
+    }
+  }
+
+  /**
+   * Create a new task, then re-fetch so it lands in the correct view (Now if due
+   * today/overdue/none, Scheduled if future). Requires connectivity and
    * auth — offline add is out of scope, so we surface an error rather than
    * enqueue. Rejects on failure so the caller (dialog) can stay open; a toast
    * is shown for surfaced errors.
@@ -315,9 +359,13 @@ export class AppController extends EventTarget {
     this.setTasks(next);
   }
 
-  /** Set the fetched task set and keep the derived grouping in sync. */
+  /** Set the fetched task set and keep the three derived views in sync. */
   private setTasks(tasks: Task[]): void {
-    this.patch({ allTasks: tasks, grouped: filterAndGroup(tasks) });
+    const { now, scheduled, someday } = partitionViews(
+      tasks,
+      this._state.somedayListId,
+    );
+    this.patch({ allTasks: tasks, grouped: now, scheduled, someday });
   }
 
   // --- refresh triggers ----------------------------------------------------
@@ -369,15 +417,18 @@ export class AppController extends EventTarget {
     await setConfig({ view });
   }
 
-  async setInclusion(listId: string, included: boolean): Promise<void> {
-    const cfg = await getConfig();
-    const inclusion = { ...cfg.listInclusion, [listId]: included };
-    await setConfig({ listInclusion: inclusion });
-    const lists = this._state.lists.map((l) =>
-      l.id === listId ? { ...l, included } : l,
-    );
-    this.patch({ lists });
-    await this.load();
+  /**
+   * Choose (or clear) the designated Someday list, persist it, and re-partition
+   * the current task set so the change is reflected immediately. A null id (or
+   * one for a list that no longer exists) means "no Someday list".
+   */
+  async setSomedayList(listId: string | null): Promise<void> {
+    await setConfig({ somedayListId: listId });
+    this.patch({ somedayListId: listId });
+    // Re-derive the three views from the already-fetched set under the new
+    // Someday list, then refresh in the background for good measure.
+    this.setTasks(this._state.allTasks);
+    await this.refresh();
   }
 
   openSettings(): void {

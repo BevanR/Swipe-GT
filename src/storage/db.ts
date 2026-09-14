@@ -2,19 +2,33 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type { AppConfig, PendingMutation, Snapshot } from '../types';
 
 /**
- * Default app configuration used when nothing has been persisted yet.
- * `listInclusion` is empty (all lists default to included), theme is 'tasks'
- * (the preferred look), and there is no auth state.
+ * Default app configuration used when nothing has been persisted yet. Theme is
+ * 'tasks' (the preferred look), there is no auth state, the default view is
+ * 'now', and no Someday list is chosen.
  */
 export const DEFAULT_CONFIG: AppConfig = {
-  listInclusion: {},
   theme: 'tasks',
   auth: null,
-  view: 'default',
+  view: 'now',
+  somedayListId: null,
 };
 
 /** The display views the app knows how to render. */
-const VALID_VIEWS: ReadonlyArray<AppConfig['view']> = ['default', 'future'];
+const VALID_VIEWS: ReadonlyArray<AppConfig['view']> = ['now', 'scheduled', 'someday'];
+
+/**
+ * Map a legacy persisted view name to a current one. Older builds stored
+ * `'default'` (now `'now'`) and `'future'` (now `'scheduled'`); anything else
+ * unknown falls back to `'now'`.
+ */
+function migrateView(view: unknown): AppConfig['view'] {
+  if (view === 'default') return 'now';
+  if (view === 'future') return 'scheduled';
+  if (typeof view === 'string' && (VALID_VIEWS as readonly string[]).includes(view)) {
+    return view as AppConfig['view'];
+  }
+  return 'now';
+}
 
 const DB_NAME = 'g-tasks';
 const DB_VERSION = 1;
@@ -74,11 +88,18 @@ export function _resetDbForTests(): void {
 /** Read the persisted {@link AppConfig}, falling back to {@link DEFAULT_CONFIG}. */
 export async function getConfig(): Promise<AppConfig> {
   const db = await getDb();
-  const stored = await db.get(CONFIG_STORE, CONFIG_KEY);
-  const merged = { ...DEFAULT_CONFIG, ...stored };
-  // Guard against a stale/removed view (e.g. an old 'starred') persisted by a
-  // previous version so we never render an unknown view.
-  if (!VALID_VIEWS.includes(merged.view)) merged.view = 'default';
+  const stored = (await db.get(CONFIG_STORE, CONFIG_KEY)) as
+    | (Partial<AppConfig> & { listInclusion?: unknown })
+    | undefined;
+  const merged: AppConfig = { ...DEFAULT_CONFIG, ...stored };
+  // Migrate legacy view names ('default'→'now', 'future'→'scheduled') and guard
+  // against any stale/unknown value so we never render an unknown view.
+  merged.view = migrateView(stored?.view);
+  // Drop any legacy `listInclusion` field that a previous version persisted; the
+  // include feature no longer exists.
+  if ('listInclusion' in merged) {
+    delete (merged as { listInclusion?: unknown }).listInclusion;
+  }
   return merged;
 }
 

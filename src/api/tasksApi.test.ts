@@ -186,6 +186,72 @@ describe('TasksApi.patchDue', () => {
   });
 });
 
+describe('TasksApi.clearDue', () => {
+  it('PATCHes an explicit due:null to clear the date', async () => {
+    let body: unknown;
+    let method: string | undefined;
+    server.use(
+      http.patch(`${TASKS_API_BASE}/lists/:l/tasks/:t`, async ({ request }) => {
+        method = request.method;
+        body = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    await makeApi().clearDue('@default', 'task-today-1');
+    expect(method).toBe('PATCH');
+    expect(body).toEqual({ due: null });
+  });
+
+  it('clears the date against the mock state', async () => {
+    await makeApi().clearDue('@default', 'task-today-1');
+    expect(getMockTask('@default', 'task-today-1')?.due).toBeUndefined();
+  });
+});
+
+describe('TasksApi.move', () => {
+  it('POSTs to the move endpoint with destinationTasklist and maps to the destination list', async () => {
+    let seenUrl: string | undefined;
+    let method: string | undefined;
+    server.use(
+      http.post(`${TASKS_API_BASE}/lists/:l/tasks/:t/move`, ({ request }) => {
+        seenUrl = request.url;
+        method = request.method;
+        return HttpResponse.json({
+          kind: 'tasks#task',
+          id: 'task-1',
+          title: 'Moved',
+          position: '00000000000000000005',
+          status: 'needsAction',
+        });
+      }),
+    );
+
+    const moved = await makeApi().move('@default', 'task-1', 'MTIzNDU2Nzg5', 'Work');
+
+    expect(method).toBe('POST');
+    // list id URL-encoded (@ → %40); destination as a query param.
+    expect(seenUrl).toBe(
+      `${TASKS_API_BASE}/lists/%40default/tasks/task-1/move?destinationTasklist=MTIzNDU2Nzg5`,
+    );
+    // The moved task carries the DESTINATION list id.
+    expect(moved).toEqual({
+      id: 'task-1',
+      taskListId: 'MTIzNDU2Nzg5',
+      taskListTitle: 'Work',
+      title: 'Moved',
+      due: null,
+      status: 'needsAction',
+      position: '00000000000000000005',
+    });
+  });
+
+  it('moves the task between lists in the mock db', async () => {
+    await makeApi().move('@default', 'task-today-1', 'MTIzNDU2Nzg5');
+    expect(getMockTask('@default', 'task-today-1')).toBeUndefined();
+    expect(getMockTask('MTIzNDU2Nzg5', 'task-today-1')?.title).toBe('Call the dentist');
+  });
+});
+
 describe('TasksApi.complete', () => {
   it('PATCHes status completed', async () => {
     let body: unknown;

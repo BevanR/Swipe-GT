@@ -3,7 +3,7 @@ import type { SnoozeOption, SnoozeOptionKey } from '../types';
 import { computeSnoozeOptions } from './snooze';
 
 /** Map option key -> date for concise assertions. */
-function byKey(options: SnoozeOption[]): Record<string, string> {
+function byKey(options: SnoozeOption[]): Record<string, string | null> {
   return Object.fromEntries(options.map((o) => [o.key, o.date]));
 }
 
@@ -215,5 +215,25 @@ describe('computeSnoozeOptions — Today option (includeToday flag)', () => {
   it('uses the correct local date on a Friday', () => {
     const opts = computeSnoozeOptions(FRI, { includeToday: true }); // Fri 2026-06-05
     expect(byKey(opts).today).toBe('2026-06-05');
+  });
+});
+
+describe('computeSnoozeOptions — Someday option (includeSomeday flag)', () => {
+  it('is absent by default', () => {
+    expect(keys(computeSnoozeOptions(WED))).not.toContain('someday');
+  });
+
+  it('is appended last with a null date when includeSomeday is true', () => {
+    const opts = computeSnoozeOptions(WED, { includeSomeday: true });
+    const last = opts[opts.length - 1];
+    expect(last.key).toBe('someday');
+    expect(last.label).toBe('Someday');
+    expect(last.date).toBeNull();
+  });
+
+  it('coexists with the Today option (today first, someday last)', () => {
+    const opts = computeSnoozeOptions(WED, { includeToday: true, includeSomeday: true });
+    expect(opts[0].key).toBe('today');
+    expect(opts[opts.length - 1].key).toBe('someday');
   });
 });

@@ -6,12 +6,18 @@ export type Screen = 'loading' | 'connect' | 'list' | 'settings';
 /** The complete, serializable UI state owned by the controller. */
 export interface AppState {
   screen: Screen;
-  /** Overdue/today/no-date grouping of the fetched set (drives the default view). */
+  /** Overdue/today/no-date grouping for the Now view. */
   grouped: GroupedTasks;
-  /** Every fetched non-completed task on included lists (drives the future view). */
+  /** Future-dated tasks for the Scheduled view (sorted by due asc). */
+  scheduled: Task[];
+  /** Dateless Someday-list tasks for the Someday view (by position asc). */
+  someday: Task[];
+  /** Every fetched non-completed task, across all lists (drives search). */
   allTasks: Task[];
   /** The active display view. */
   view: ViewName;
+  /** The designated Someday list id, or null when none is chosen. */
+  somedayListId: string | null;
   /** Task lists from the most recent tasklists.list (for the settings screen). */
   lists: TaskList[];
   theme: ThemeName;
@@ -37,8 +43,11 @@ export function initialState(theme: ThemeName): AppState {
   return {
     screen: 'loading',
     grouped: EMPTY_GROUPS,
+    scheduled: [],
+    someday: [],
     allTasks: [],
-    view: 'default',
+    view: 'now',
+    somedayListId: null,
     lists: [],
     theme,
     fromCache: false,

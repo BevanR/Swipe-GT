@@ -59,6 +59,18 @@ function makeApi(initial: Task[]): ApiLike & { store: Task[] } {
       const t = store.find((x) => x.id === id);
       if (t) t.due = due;
     }),
+    clearDue: vi.fn(async (_l: string, id: string) => {
+      const t = store.find((x) => x.id === id);
+      if (t) t.due = null;
+    }),
+    move: vi.fn(async (_l: string, id: string, dest: string, destTitle?: string) => {
+      const t = store.find((x) => x.id === id);
+      if (t) {
+        t.taskListId = dest;
+        t.taskListTitle = destTitle ?? '';
+      }
+      return { ...(t as Task) };
+    }),
   };
 }
 
@@ -96,11 +108,11 @@ describe('AppController.load (filter → render wiring)', () => {
     expect(allShown.find((t) => t.id === 'future')).toBeUndefined();
   });
 
-  it('defaults new lists to included and persists them', async () => {
+  it('exposes all fetched lists (no inclusion filtering)', async () => {
     const api = makeApi([task('today', localDate(0))]);
     const ctrl = new AppController({ auth: makeAuth(), api });
     await ctrl.load();
-    expect(ctrl.state.lists).toEqual([{ id: 'l1', title: 'My Tasks', included: true }]);
+    expect(ctrl.state.lists).toEqual([{ id: 'l1', title: 'My Tasks' }]);
   });
 });
 
@@ -231,27 +243,45 @@ describe('AppController.boot', () => {
   });
 
   it('restores the persisted view from config', async () => {
-    await setConfig({ view: 'future' });
+    await setConfig({ view: 'scheduled' });
     const auth = makeAuth();
     auth.isConnected = vi.fn(async () => false);
     const ctrl = new AppController({ auth, api: makeApi([]) });
     await ctrl.boot();
-    expect(ctrl.state.view).toBe('future');
+    expect(ctrl.state.view).toBe('scheduled');
   });
 
-  it('falls back to the default view when a stale/unknown view is persisted', async () => {
-    // Simulate an old build that persisted the removed 'starred' view.
-    await setConfig({ view: 'starred' as unknown as 'default' });
+  it('migrates a legacy persisted view (future → scheduled) on boot', async () => {
+    await setConfig({ view: 'future' as unknown as 'scheduled' });
     const auth = makeAuth();
     auth.isConnected = vi.fn(async () => false);
     const ctrl = new AppController({ auth, api: makeApi([]) });
     await ctrl.boot();
-    expect(ctrl.state.view).toBe('default');
+    expect(ctrl.state.view).toBe('scheduled');
+  });
+
+  it('falls back to the "now" view when a stale/unknown view is persisted', async () => {
+    // Simulate an old build that persisted the removed 'starred' view.
+    await setConfig({ view: 'starred' as unknown as 'now' });
+    const auth = makeAuth();
+    auth.isConnected = vi.fn(async () => false);
+    const ctrl = new AppController({ auth, api: makeApi([]) });
+    await ctrl.boot();
+    expect(ctrl.state.view).toBe('now');
+  });
+
+  it('restores the persisted somedayListId on boot', async () => {
+    await setConfig({ somedayListId: 'l1' });
+    const auth = makeAuth();
+    auth.isConnected = vi.fn(async () => false);
+    const ctrl = new AppController({ auth, api: makeApi([]) });
+    await ctrl.boot();
+    expect(ctrl.state.somedayListId).toBe('l1');
   });
 });
 
 describe('AppController.setView', () => {
-  it('switches and persists the view; keeps allTasks for filtering', async () => {
+  it('switches and persists the view; keeps allTasks + derived views', async () => {
     const api = makeApi([
       task('overdue', localDate(-1)),
       task('today', localDate(0)),
@@ -260,17 +290,136 @@ describe('AppController.setView', () => {
     const ctrl = new AppController({ auth: makeAuth(), api });
     await ctrl.load();
 
-    // The full fetched set (incl. the future task) is retained for the
-    // future view, even though it is filtered out of `grouped`.
+    // The full fetched set is retained; the future task lands in `scheduled`.
     expect(ctrl.state.allTasks.map((t) => t.id).sort()).toEqual([
       'future',
       'overdue',
       'today',
     ]);
     expect(ctrl.state.grouped.overdue.map((t) => t.id)).toEqual(['overdue']);
+    expect(ctrl.state.scheduled.map((t) => t.id)).toEqual(['future']);
 
-    await ctrl.setView('future');
-    expect(ctrl.state.view).toBe('future');
-    expect((await getConfig()).view).toBe('future');
+    await ctrl.setView('scheduled');
+    expect(ctrl.state.view).toBe('scheduled');
+    expect((await getConfig()).view).toBe('scheduled');
+  });
+});
+
+describe('AppController.setSomedayList', () => {
+  it('re-partitions so dateless someday-list tasks move to the someday view', async () => {
+    const api = makeApi([task('parked', null), task('today', localDate(0))]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+
+    // Before choosing a someday list, the dateless task is in Now's noDate.
+    expect(ctrl.state.grouped.noDate.map((t) => t.id)).toEqual(['parked']);
+    expect(ctrl.state.someday).toEqual([]);
+
+    await ctrl.setSomedayList('l1');
+
+    expect(ctrl.state.somedayListId).toBe('l1');
+    expect((await getConfig()).somedayListId).toBe('l1');
+    // The dateless l1 task is now in the someday view, out of Now.
+    expect(ctrl.state.someday.map((t) => t.id)).toEqual(['parked']);
+    expect(ctrl.state.grouped.noDate).toEqual([]);
+    // The dated task stays in Now regardless of its list.
+    expect(ctrl.state.grouped.today.map((t) => t.id)).toEqual(['today']);
+  });
+
+  it('clearing the someday list (null) returns dateless tasks to Now', async () => {
+    await setConfig({ somedayListId: 'l1' });
+    const api = makeApi([task('parked', null)]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.boot();
+    expect(ctrl.state.someday.map((t) => t.id)).toEqual(['parked']);
+
+    await ctrl.setSomedayList(null);
+    expect(ctrl.state.somedayListId).toBeNull();
+    expect(ctrl.state.someday).toEqual([]);
+    expect(ctrl.state.grouped.noDate.map((t) => t.id)).toEqual(['parked']);
+  });
+});
+
+describe('AppController.moveToSomeday', () => {
+  it('clears the due date and moves the task, landing it in the someday view', async () => {
+    await setConfig({ somedayListId: 'l1' });
+    const api = makeApi([task('t', localDate(0))]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.boot();
+    const t = ctrl.state.grouped.today.find((x) => x.id === 't')!;
+
+    await ctrl.moveToSomeday(t);
+
+    expect(api.move).toHaveBeenCalledWith('l1', 't', 'l1', 'My Tasks');
+    expect(api.clearDue).toHaveBeenCalledWith('l1', 't');
+    // After refetch the task is dateless in the someday list → someday view.
+    expect(ctrl.state.someday.map((x) => x.id)).toEqual(['t']);
+    expect(ctrl.state.grouped.today).toEqual([]);
+  });
+
+  it('toasts and does not move when no someday list is configured', async () => {
+    const api = makeApi([task('t', localDate(0))]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    const t = ctrl.state.grouped.today.find((x) => x.id === 't')!;
+
+    await ctrl.moveToSomeday(t);
+
+    expect(api.move).not.toHaveBeenCalled();
+    expect(ctrl.state.toast).toBeTruthy();
+    // Task stays put.
+    expect(ctrl.state.grouped.today.map((x) => x.id)).toEqual(['t']);
+  });
+
+  it('rejects with a toast when offline and does not enqueue', async () => {
+    await setConfig({ somedayListId: 'l1' });
+    const api = makeApi([task('t', localDate(0))]);
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.boot();
+    setOnline(false);
+    const t = ctrl.state.grouped.today.find((x) => x.id === 't')!;
+
+    await ctrl.moveToSomeday(t);
+
+    expect(api.move).not.toHaveBeenCalled();
+    expect(ctrl.state.toast).toBe("Can't move to Someday while offline");
+    expect(await listMutations()).toHaveLength(0);
+    // Optimistic removal is not applied (the task is still in Now).
+    expect(ctrl.state.grouped.today.map((x) => x.id)).toEqual(['t']);
+  });
+
+  it('rolls back and shows a clear message when the task is recurring', async () => {
+    await setConfig({ somedayListId: 'l1' });
+    const api = makeApi([task('t', localDate(0))]);
+    api.move = vi.fn(async () => {
+      throw new Error('Google Tasks API 400 Bad Request: cannot move recurring task');
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.boot();
+    const t = ctrl.state.grouped.today.find((x) => x.id === 't')!;
+
+    await ctrl.moveToSomeday(t);
+
+    expect(ctrl.state.grouped.today.map((x) => x.id)).toEqual(['t']);
+    expect(ctrl.state.toast).toMatch(/recurring/i);
+    expect(await listMutations()).toHaveLength(0);
+  });
+
+  it('rolls back and toasts on any other move error', async () => {
+    await setConfig({ somedayListId: 'l1' });
+    const api = makeApi([task('t', localDate(0))]);
+    api.move = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.boot();
+    const t = ctrl.state.grouped.today.find((x) => x.id === 't')!;
+
+    await ctrl.moveToSomeday(t);
+
+    expect(ctrl.state.grouped.today.map((x) => x.id)).toEqual(['t']);
+    expect(ctrl.state.toast).toBeTruthy();
+    expect(ctrl.state.toast).not.toMatch(/recurring/i);
+    expect(await listMutations()).toHaveLength(0);
   });
 });

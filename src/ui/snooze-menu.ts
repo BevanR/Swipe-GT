@@ -81,7 +81,9 @@ export class SnoozeMenu extends LitElement {
               <md-list-item
                 type="button"
                 role="menuitem"
-                aria-label=${`Snooze until ${opt.label}, ${formatFullDate(opt.date)}`}
+                aria-label=${opt.date == null
+                  ? `Snooze: ${opt.label}, no date`
+                  : `Snooze until ${opt.label}, ${formatFullDate(opt.date)}`}
                 @click=${() => this.pick(opt)}
                 @keydown=${(e: KeyboardEvent) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -91,7 +93,9 @@ export class SnoozeMenu extends LitElement {
                 }}
               >
                 <span slot="headline">${opt.label}</span>
-                <span slot="supporting-text" class="date">${formatFullDate(opt.date)}</span>
+                <span slot="supporting-text" class="date"
+                  >${opt.date == null ? 'No date' : formatFullDate(opt.date)}</span
+                >
               </md-list-item>
             `,
           )}

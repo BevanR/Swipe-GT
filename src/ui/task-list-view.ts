@@ -15,28 +15,34 @@ interface ViewDef {
   icon: string; // SVG path data
 }
 
-/** The two display views and their switcher icons. */
+/** The three display views and their switcher icons. */
 const VIEWS: ViewDef[] = [
-  // Inbox / list icon.
+  // Now — inbox / list icon.
   {
-    key: 'default',
-    label: 'List',
+    key: 'now',
+    label: 'Now',
     icon: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 12h-4c0 1.66-1.35 3-3 3s-3-1.34-3-3H5V5h14v10z',
   },
-  // Calendar icon.
+  // Scheduled — calendar icon.
   {
-    key: 'future',
+    key: 'scheduled',
     label: 'Scheduled',
     icon: 'M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM5 8V6h14v2H5z',
+  },
+  // Someday — archive box icon.
+  {
+    key: 'someday',
+    label: 'Someday',
+    icon: 'M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z',
   },
 ];
 
 /**
- * The main authenticated screen: a header with a 2-way view switcher, optional
- * offline/cache banner, and a flat, full-bleed, swipeable task list. Purely
- * presentational — it renders props and dispatches `open-settings`, `refresh`
- * and `set-view`. Per-card `task-complete` / `task-snooze` events bubble past it
- * to the app.
+ * The main authenticated screen: a header with a 3-way view switcher (Now /
+ * Scheduled / Someday), optional offline/cache banner, and a flat, full-bleed,
+ * swipeable task list. Purely presentational — it renders props and dispatches
+ * `open-settings`, `refresh` and `set-view`. Per-card `task-complete` /
+ * `task-snooze` / `task-someday` events bubble past it to the app.
  */
 @customElement('task-list-view')
 export class TaskListView extends LitElement {
@@ -259,8 +265,14 @@ export class TaskListView extends LitElement {
     today: [],
     noDate: [],
   };
+  /** Future-dated tasks for the Scheduled view (sorted by due asc). */
+  @property({ attribute: false }) scheduled: Task[] = [];
+  /** Dateless Someday-list tasks for the Someday view (by position asc). */
+  @property({ attribute: false }) someday: Task[] = [];
   @property({ attribute: false }) allTasks: Task[] = [];
-  @property() view: ViewName = 'default';
+  @property() view: ViewName = 'now';
+  /** The designated Someday list id (or null); threaded down to each card. */
+  @property({ attribute: false }) somedayListId: string | null = null;
   @property({ type: Boolean }) offline = false;
   @property({ type: Boolean }) fromCache = false;
   @property({ type: Boolean }) loading = false;
@@ -308,33 +320,39 @@ export class TaskListView extends LitElement {
     void this.updateComplete.then(() => this.searchInput?.focus());
   }
 
-  /** Today's LOCAL calendar date as 'YYYY-MM-DD'. */
-  private todayStr(): string {
-    const d = new Date();
-    const p = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-  }
-
-  /** The flat, ordered list of tasks to show for the current view. */
+  /**
+   * The flat, ordered list of tasks for the current view — the exact membership
+   * of each view (from the controller's partition), in display order. Used for
+   * the flat Now/Someday renders and as the "in this view" set for search.
+   */
   private visibleTasks(): Task[] {
-    if (this.view === 'future') {
-      const today = this.todayStr();
-      return this.allTasks
-        .filter((t) => t.due !== null && t.due.slice(0, 10) > today)
-        .sort((a, b) => ((a.due as string) < (b.due as string) ? -1 : (a.due as string) > (b.due as string) ? 1 : 0));
+    switch (this.view) {
+      case 'scheduled':
+        return this.scheduled;
+      case 'someday':
+        return this.someday;
+      case 'now':
+      default:
+        // Now: overdue first, then today, then no-date.
+        return [...this.grouped.overdue, ...this.grouped.today, ...this.grouped.noDate];
     }
-    // default: overdue first, then today, then no-date.
-    return [...this.grouped.overdue, ...this.grouped.today, ...this.grouped.noDate];
   }
 
   private emptyState(): { big: string; heading: string; body: string } {
     switch (this.view) {
-      case 'future':
+      case 'scheduled':
         return {
           big: '📅',
           heading: 'Nothing scheduled ahead',
           body: 'Tasks due after today will appear here.',
         };
+      case 'someday':
+        return {
+          big: '🗄️',
+          heading: 'Nothing here for someday',
+          body: 'Park dateless tasks here from the snooze menu.',
+        };
+      case 'now':
       default:
         return {
           big: '✓',
@@ -358,7 +376,7 @@ export class TaskListView extends LitElement {
 
   /** Future tasks grouped into date buckets for the Scheduled view. */
   private futureGroups() {
-    return groupScheduled(this.visibleTasks(), new Date());
+    return groupScheduled(this.scheduled, new Date());
   }
 
   /** The two-section result list shown while a search query is active. */
@@ -371,7 +389,8 @@ export class TaskListView extends LitElement {
           : repeat(
               sections.inView,
               (t) => t.id,
-              (t) => html`<task-card .task=${t}></task-card>`,
+              (t) =>
+                html`<task-card .task=${t} .somedayListId=${this.somedayListId}></task-card>`,
             )}
         ${sections.other.length > 0
           ? html`
@@ -379,7 +398,8 @@ export class TaskListView extends LitElement {
               ${repeat(
                 sections.other,
                 (t) => t.id,
-                (t) => html`<task-card .task=${t}></task-card>`,
+                (t) =>
+                  html`<task-card .task=${t} .somedayListId=${this.somedayListId}></task-card>`,
               )}
             `
           : nothing}
@@ -391,7 +411,7 @@ export class TaskListView extends LitElement {
     const tasks = this.visibleTasks();
     const empty = this.emptyState();
     const searching = this.searchQuery.trim() !== '';
-    const groups = !searching && this.view === 'future' ? this.futureGroups() : [];
+    const groups = !searching && this.view === 'scheduled' ? this.futureGroups() : [];
     const sections = searching
       ? partitionSearch(tasks, this.allTasks, this.searchQuery)
       : null;
@@ -503,7 +523,7 @@ export class TaskListView extends LitElement {
                   <h2>${empty.heading}</h2>
                   <p>${empty.body}</p>
                 </div>`
-              : this.view === 'future'
+              : this.view === 'scheduled'
                 ? html`<div class="list">
                     ${groups.map(
                       (g) => html`
@@ -511,7 +531,11 @@ export class TaskListView extends LitElement {
                         ${repeat(
                           g.tasks,
                           (t) => t.id,
-                          (t) => html`<task-card .task=${t}></task-card>`,
+                          (t) =>
+                            html`<task-card
+                              .task=${t}
+                              .somedayListId=${this.somedayListId}
+                            ></task-card>`,
                         )}
                       `,
                     )}
@@ -520,7 +544,11 @@ export class TaskListView extends LitElement {
                     ${repeat(
                       tasks,
                       (t) => t.id,
-                      (t) => html`<task-card .task=${t}></task-card>`,
+                      (t) =>
+                        html`<task-card
+                          .task=${t}
+                          .somedayListId=${this.somedayListId}
+                        ></task-card>`,
                     )}
                   </div>`}
         </main>
