@@ -159,19 +159,19 @@ export class TaskCard extends LitElement {
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: var(--app-body-gap, 2px);
     }
     .title {
       font-size: 1rem;
       font-weight: 600;
-      line-height: 1.3;
+      line-height: var(--app-title-line, 1.3);
       color: var(--app-on-surface);
       word-break: break-word;
     }
     .meta {
       display: flex;
       align-items: baseline;
-      gap: 8px;
+      gap: var(--app-meta-gap, 8px);
       flex-wrap: wrap;
     }
     .due {
