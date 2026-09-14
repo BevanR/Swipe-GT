@@ -228,16 +228,12 @@ export class TaskListView extends LitElement {
   @property({ type: Boolean }) fromCache = false;
   @property({ type: Boolean }) loading = false;
   @property({ type: Number }) fetchedAt: number | null = null;
-  /** All lists (for the add-task list picker); filtered to included here. */
+  /** All the user's lists, in Google order (default list first). */
   @property({ attribute: false }) lists: TaskList[] = [];
   /** Async add-task handler wired to controller.addTask by the shell. */
   @property({ attribute: false }) addTask?: (input: AddTaskInput) => Promise<void>;
 
   @query('add-task-dialog') private addDialog?: AddTaskDialog;
-
-  private includedLists(): TaskList[] {
-    return this.lists.filter((l) => l.included);
-  }
 
   private openAddDialog(): void {
     this.addDialog?.show();
@@ -394,7 +390,7 @@ export class TaskListView extends LitElement {
           </svg>
         </button>
         <add-task-dialog
-          .lists=${this.includedLists()}
+          .lists=${this.lists}
           .onSubmit=${this.addTask}
         ></add-task-dialog>
       </div>

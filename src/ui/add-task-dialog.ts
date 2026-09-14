@@ -62,7 +62,10 @@ export class AddTaskDialog extends LitElement {
     }
   `;
 
-  /** The lists offered in the picker (host passes only included lists). */
+  /**
+   * The lists offered in the picker — all the user's lists in Google order, so
+   * `lists[0]` is the Google default list and becomes the pre-selected default.
+   */
   @property({ attribute: false }) lists: TaskList[] = [];
   /** Async submit handler (wraps controller.addTask). */
   @property({ attribute: false }) onSubmit?: (input: AddTaskInput) => Promise<void>;
