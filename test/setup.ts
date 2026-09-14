@@ -1,9 +1,21 @@
-// Vitest global setup. Runs once before each test file in the jsdom
-// environment (see `vite.config.ts` -> test.setupFiles).
+// Vitest global setup. Runs before each test file in the jsdom environment
+// (see `vite.config.ts` -> test.setupFiles).
 //
-// Feature agents wire cross-cutting test concerns here, e.g.:
-//   - Mock Service Worker (msw) server lifecycle: beforeAll/afterEach/afterAll
-//   - @testing-library/dom cleanup between tests
-//
-// Intentionally empty for the foundation wave.
-export {};
+// Wires the Mock Service Worker (msw) node-server lifecycle and resets the
+// mock's in-memory database between tests so API tests are isolated.
+import { afterAll, afterEach, beforeAll } from 'vitest';
+import { server } from '../src/mocks/server';
+import { resetMockDb } from '../src/mocks/handlers';
+
+beforeAll(() => {
+  server.listen({ onUnhandledRequest: 'error' });
+});
+
+afterEach(() => {
+  server.resetHandlers();
+  resetMockDb();
+});
+
+afterAll(() => {
+  server.close();
+});
