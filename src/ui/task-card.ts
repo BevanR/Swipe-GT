@@ -15,6 +15,7 @@ import { formatDueLabel } from '../logic/dueLabel';
  */
 export type DueDisplay = 'auto' | 'hidden' | (string & {});
 import { decideSwipe, isHorizontalSwipe, isVerticalScroll } from './swipe';
+import { UndoTimer } from './undo';
 import './snooze-menu.js';
 
 /**
@@ -71,6 +72,56 @@ export class TaskCard extends LitElement {
       justify-content: flex-start;
       background: var(--app-complete);
       color: var(--app-complete-on);
+    }
+    /* While an Undo window is open the green bar holds a "Completed" label and a
+       real Undo button, pushed to the trailing edge (over the green). */
+    .action.complete.undo {
+      justify-content: flex-end;
+    }
+    .action.complete .completed-label {
+      font-weight: 600;
+    }
+    /* Undo button: solid white on the green bar for high contrast, clearly a
+       tappable control and keyboard-activatable. */
+    .action.complete .undo-btn {
+      appearance: none;
+      flex: none;
+      border: none;
+      border-radius: 999px;
+      padding: 6px 16px;
+      font: inherit;
+      font-weight: 700;
+      line-height: 1;
+      background: var(--app-complete-on);
+      color: var(--app-complete);
+      cursor: pointer;
+    }
+    .action.complete .undo-btn:hover {
+      background: color-mix(in srgb, var(--app-complete-on) 90%, #000);
+    }
+    .action.complete .undo-btn:focus-visible {
+      outline: 2px solid var(--app-complete-on);
+      outline-offset: 2px;
+    }
+    /* Subtle 2s countdown: a hairline that shrinks along the bottom of the bar,
+       matching UNDO_WINDOW_MS. Purely decorative, so reduced motion hides it. */
+    .action.complete .undo-progress {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      height: 3px;
+      width: 100%;
+      transform-origin: left center;
+      background: color-mix(in srgb, var(--app-complete-on) 55%, transparent);
+      animation: undo-countdown 2s linear forwards;
+    }
+    @keyframes undo-countdown {
+      from {
+        transform: scaleX(1);
+      }
+      to {
+        transform: scaleX(0);
+      }
     }
     .action.snooze {
       justify-content: flex-end;
@@ -221,6 +272,12 @@ export class TaskCard extends LitElement {
       :host {
         transition-duration: 0s !important;
       }
+      /* The Undo WINDOW is a delay, not an animation, so it still applies — only
+         the decorative countdown bar is suppressed here. */
+      .action.complete .undo-progress {
+        animation: none;
+        display: none;
+      }
     }
   `;
 
@@ -239,6 +296,15 @@ export class TaskCard extends LitElement {
   @state() private completing = false;
   @state() private snoozeOpen = false;
   @state() private snoozeOptions: SnoozeOption[] = [];
+  /**
+   * True between committing a Complete and it either being undone or the window
+   * elapsing. While set, the green bar shows the Undo affordance and the card
+   * ignores further gestures.
+   */
+  @state() private undoPending = false;
+
+  /** Single-shot timer backing the Undo window (state machine in ./undo.ts). */
+  private readonly undo = new UndoTimer();
 
   private dragging = false;
   private axis: 'none' | 'h' | 'v' = 'none';
@@ -290,7 +356,9 @@ export class TaskCard extends LitElement {
   }
 
   private onPointerDown = (e: PointerEvent) => {
-    if (this.snoozeOpen) return;
+    // While a Complete is held behind its Undo window, swallow new gestures on
+    // this card so a swipe/tap can't start a second action or re-trigger.
+    if (this.snoozeOpen || this.undoPending) return;
     if (e.button !== undefined && e.button !== 0) return; // left button / touch only
     this.dragging = true;
     this.axis = 'none';
@@ -386,34 +454,78 @@ export class TaskCard extends LitElement {
   private onCircleComplete = (e: Event) => {
     e.stopPropagation();
     if (this.completing) return;
-    this.completing = true;
     this.flyOutAndComplete();
   };
 
+  /**
+   * Commit a Complete, but hold it behind a ~2s Undo window instead of
+   * collapsing immediately: slide the front out so the green bar is revealed,
+   * mark `completing`/`undoPending`, and start the timer. Then either
+   * `onUndo` cancels it (spring back, no completion) or the window elapses and
+   * `onUndoElapsed` collapses the row and dispatches `task-complete`.
+   */
   private flyOutAndComplete(): void {
-    this.flyOutCollapse('right', () => {
-      this.dispatchEvent(
-        new CustomEvent('task-complete', {
-          detail: { task: this.task },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-    });
+    if (this.undoPending) return;
+    this.completing = true;
+    this.undoPending = true;
+    this.slideOut('right');
+    this.undo.start(() => this.onUndoElapsed());
+  }
+
+  /** Undo tapped: cancel the window (if still pending) and spring back to rest. */
+  private onUndo = (e: Event) => {
+    e.stopPropagation();
+    if (!this.undo.cancel()) return;
+    this.undoPending = false;
+    this.completing = false;
+    this.animating = true;
+    this.offset = 0;
+  };
+
+  /** The Undo window elapsed: collapse the row, then dispatch the completion. */
+  private onUndoElapsed(): void {
+    this.undoPending = false;
+    this.collapseThenDispatch(() => this.dispatchComplete());
+  }
+
+  private dispatchComplete(): void {
+    this.dispatchEvent(
+      new CustomEvent('task-complete', {
+        detail: { task: this.task },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   /**
-   * Slide the front out in `dir` (keeping the coloured reveal visible), then
-   * collapse the row's height to 0 (snappy, ~150ms) so completing/snoozing
+   * If the card unmounts (navigation / view change) with a Complete still held
+   * behind its Undo window, FLUSH it: stop the timer and dispatch the completion
+   * now so a pending completion is never silently lost.
+   */
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    if (this.undo.cancel()) {
+      this.undoPending = false;
+      this.dispatchComplete();
+    }
+  }
+
+  /** Slide the front fully out in `dir`, revealing the coloured action bar. */
+  private slideOut(dir: 'left' | 'right'): void {
+    this.animating = true;
+    this.offset = (dir === 'right' ? 1 : -1) * this.width() * 1.15;
+  }
+
+  /**
+   * Collapse the row's height to 0 (snappy, ~150ms) so completing/snoozing
    * doesn't leave an empty gap, and finally fire `dispatch` for the controller
    * to drop the task. Under reduced motion the shadow-DOM rule zeroes the height
    * transition, but the setTimeout below still fires, so the row is removed
-   * either way. (Later: hold this open with an Undo button before collapsing.)
+   * either way. Assumes the front is already slid out.
    */
-  private flyOutCollapse(dir: 'left' | 'right', dispatch: () => void): void {
+  private collapseThenDispatch(dispatch: () => void): void {
     const startHeight = this.offsetHeight;
-    this.animating = true;
-    this.offset = (dir === 'right' ? 1 : -1) * this.width() * 1.15;
     // Pin the current height, force a reflow, then transition it to 0.
     this.style.height = `${startHeight}px`;
     this.style.transition = 'height 0.15s ease';
@@ -424,10 +536,19 @@ export class TaskCard extends LitElement {
     window.setTimeout(dispatch, 170);
   }
 
+  /**
+   * Slide the front out in `dir` then collapse+dispatch. Used by the snooze /
+   * someday / no-date paths, which commit immediately (no Undo window).
+   */
+  private flyOutCollapse(dir: 'left' | 'right', dispatch: () => void): void {
+    this.slideOut(dir);
+    this.collapseThenDispatch(dispatch);
+  }
+
   /** Explicit snooze button (desktop-friendly): same path as a left-swipe commit. */
   private onSnoozeButton = (e: Event) => {
     e.stopPropagation();
-    if (this.snoozeOpen) return;
+    if (this.snoozeOpen || this.undoPending) return;
     this.openSnooze();
   };
 
@@ -509,9 +630,31 @@ export class TaskCard extends LitElement {
           ? formatDueLabel(due, new Date())
           : this.dueDisplay;
     return html`
-      <div class="action complete" aria-hidden="true" ?hidden=${!revealComplete}>
-        <svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z" /></svg>
-        <span>Complete</span>
+      <div
+        class="action complete ${this.undoPending ? 'undo' : ''}"
+        aria-hidden=${this.undoPending ? 'false' : 'true'}
+        ?hidden=${!revealComplete}
+      >
+        ${this.undoPending
+          ? html`
+              <span class="completed-label">Completed</span>
+              <button
+                class="undo-btn"
+                type="button"
+                aria-label="Undo complete"
+                @pointerdown=${this.stopDrag}
+                @click=${this.onUndo}
+              >
+                Undo
+              </button>
+              <div class="undo-progress" aria-hidden="true"></div>
+            `
+          : html`
+              <svg viewBox="0 0 24 24">
+                <path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z" />
+              </svg>
+              <span>Complete</span>
+            `}
       </div>
       <div class="action snooze" aria-hidden="true" ?hidden=${!revealSnooze}>
         <span>Snooze</span>
