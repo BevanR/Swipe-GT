@@ -116,5 +116,38 @@ The workflow passes it to the build as
 `VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}`.
 
 Also ensure Pages is enabled with **Source: GitHub Actions**
-(*Settings → Pages*). The site is served under `/Swipe-GT/`, which is why Vite's
-`base` is set to `/Swipe-GT/`.
+(*Settings → Pages*).
+
+## Rehosting / deploying elsewhere
+
+This build is **path-portable**: Vite's `base` is `'./'` (relative), so the
+emitted `dist/` works unchanged at **any** mount path — `/`, `/Swipe-GT/`,
+`/some-other-path/`, a different repo name, or a different host — **with no
+rebuild and no code edits**. There is a single source of truth for the base
+(`base` in `vite.config.ts`); nothing hardcodes `/Swipe-GT/` anywhere.
+
+What this means in practice:
+
+- **Renaming the repo** (e.g. `g-tasks` → `Swipe-GT`) or **moving to another
+  static host / subpath**: just publish `dist/` — **nothing to set**. All JS/CSS
+  asset URLs, the PWA manifest (`scope`/`start_url`/icon `src`s), the service
+  worker registration, its scope, its precache, and `navigateFallback` are all
+  relative and resolve against wherever the app is served from. The installed PWA
+  is therefore not pinned to `/Swipe-GT/` either.
+- Routing is hash-based (`#/…`), so deep links survive a reload at any subpath.
+- **New host / origin → update Google OAuth.** Auth is origin-based, so a new
+  host needs its origin added to the OAuth client's **Authorized JavaScript
+  origins** (*Google Cloud Console → APIs & Services → Credentials → the Web
+  client*). The current origins are `https://bevanr.github.io` and
+  `http://localhost:5173`; add the new one (e.g. `https://example.github.io` or
+  your custom domain). No redirect URI is needed (GIS uses a popup).
+- **GitHub Pages** still needs **Source: GitHub Actions** (*Settings → Pages*),
+  same as above.
+- The smoke check (`scripts/smoke.mjs`) derives the base from Vite's own resolved
+  config, so it follows the base automatically — no edit needed there either.
+
+> Advanced / fallback: if you ever need **absolute** base paths (some CDNs or
+> reverse proxies prefer them), set an env var and pass it as the base in
+> `vite.config.ts` (e.g. `base: process.env.VITE_BASE || './'`) and build with
+> `VITE_BASE=/your-path/`. The relative default is recommended and is what all
+> the verification above exercises.

@@ -1,9 +1,15 @@
 // Headless smoke check for the built PWA.
 //
-// Serves the built `dist/` with `vite preview` (which honours base: '/Swipe-GT/'),
-// loads it in the pre-installed Chromium via Playwright, and fails loudly on ANY
-// error signal (console errors, uncaught exceptions / syntax errors, failed
-// requests) or if the app does not actually render its Connect screen.
+// Serves the built `dist/` with `vite preview` (which mounts at the configured
+// base), loads it in the pre-installed Chromium via Playwright, and fails loudly
+// on ANY error signal (console errors, uncaught exceptions / syntax errors,
+// failed requests) or if the app does not actually render its Connect screen.
+//
+// The base is NOT hardcoded here: it is derived from Vite's own resolved config
+// (the same source `vite preview` uses to mount the server), so the smoke URL
+// follows whatever base the build used — relative (`base: './'` → mounts at `/`)
+// or a fixed path (`VITE_BASE=/Swipe-GT/` → mounts at `/Swipe-GT/`) — with no
+// edits here. See vite.config.ts and README "Rehosting / deploying elsewhere".
 //
 // Assumes `dist/` already exists (run `npm run build` first, or use
 // `npm run smoke:build` for the one-shot build+smoke).
@@ -13,11 +19,18 @@ import { createConnection } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
+import { resolveConfig } from 'vite';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const PORT = 4173;
-const BASE_URL = `http://localhost:${PORT}/Swipe-GT/`;
+
+// Ask Vite what base `vite preview` will mount the site at. `resolveConfig` in
+// the 'serve' command normalizes a relative build base (`./`) to `/`, and echoes
+// an absolute base (`/Swipe-GT/`) unchanged — matching the preview server mount.
+const resolved = await resolveConfig({ root: ROOT }, 'serve', 'production', 'production');
+const BASE_PATH = resolved.base; // e.g. '/' or '/Swipe-GT/'
+const BASE_URL = `http://localhost:${PORT}${BASE_PATH}`;
 
 function waitForPort(port, timeoutMs = 30000) {
   const start = Date.now();
@@ -57,6 +70,8 @@ async function main() {
     console.error('FAIL: dist/index.html not found. Run `npm run build` first.');
     process.exit(1);
   }
+
+  console.log(`[smoke] derived base path: ${BASE_PATH} -> ${BASE_URL}`);
 
   // Start `vite preview` serving the built dist at the correct base path.
   // `detached: true` puts the preview in its own process group so we can kill

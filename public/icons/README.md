@@ -12,5 +12,7 @@ production deploy (referenced by the web manifest in `vite.config.ts`):
 Notes:
 - The maskable icon needs adequate safe-zone padding (~20% on each edge) so it
   renders correctly inside adaptive-icon masks.
-- Files in `public/` are copied to the site root at build time and, because Vite
-  `base` is `/g-tasks/`, are served from `https://bevanr.github.io/g-tasks/icons/…`.
+- Files in `public/` are copied to the site root at build time. Vite `base` is
+  relative (`'./'`), so they resolve under whatever path the app is served from
+  (e.g. `https://bevanr.github.io/Swipe-GT/icons/…`) — the build is path-portable
+  and not pinned to any fixed base.

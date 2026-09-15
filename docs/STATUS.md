@@ -23,6 +23,7 @@ This doc is the durable handoff for humans and future agents. Keep it current.
 - Push to `main` → `.github/workflows/deploy.yml` runs: build → **smoke gate** → publish to GitHub Pages.
 - The smoke gate (headless Chromium) blocks a broken bundle from ever deploying. If it fails, nothing publishes.
 - Pages must be set to **Settings → Pages → Source: GitHub Actions** (one-time, already done).
+- **Path-portable / rehostable.** Vite `base` is `'./'` (relative) — the single source of truth for the base. The built `dist/` works at ANY mount path (`/`, `/Swipe-GT/`, `/anything/`) with no rebuild: asset URLs, the PWA manifest (`scope`/`start_url`/icons), the SW registration + scope + precache + `navigateFallback` are all relative. A repo rename or host/subpath move needs **nothing set**. `scripts/smoke.mjs` derives the base from Vite's resolved config, so it follows the base automatically. A new host must have its origin added to the OAuth client (see Auth below). See README "Rehosting / deploying elsewhere". (Verified: built once, served from a plain static server at `/some-other-path/` — app rendered, 0 console errors, all assets 200, SW scope anchored to the subpath.)
 - Current workflow while iterating: **direct commits to `main`** (single agent). Switch to **branch + PR per agent** whenever more than one agent touches code concurrently.
 
 ## Auth / Google setup
@@ -74,7 +75,7 @@ scripts/
 
 ## Locked-in decisions (do not re-litigate)
 
-- **GitHub Pages**, static only, base path `/Swipe-GT/`. No backend, no serverless.
+- **GitHub Pages**, static only. No backend, no serverless. Base is **relative (`'./'`)** so the build is path-portable (rehostable at any path/host with no rebuild); it currently deploys to `https://bevanr.github.io/Swipe-GT/` but is not pinned to that path.
 - **GIS token flow**, silent-refresh only, no refresh token, no client secret.
 - Scope `auth/tasks` only.
 - **TypeScript experimental decorators** (`experimentalDecorators: true`, `useDefineForClassFields: false`), Lit components use `@customElement`/`@property`/`@state` **without** the `accessor` keyword. Vite 8 transpiles via rolldown/Oxc, which does **not** lower standard decorators/`accessor` — using them ships raw syntax that crashes the browser (blank page). This is why the smoke gate exists.

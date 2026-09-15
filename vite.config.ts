@@ -1,24 +1,32 @@
 import { defineConfig } from 'vitest/config';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// GitHub Pages serves this repo at https://bevanr.github.io/Swipe-GT/
-// so every asset path, the SW scope, and the manifest must live under /Swipe-GT/.
-const BASE = '/Swipe-GT/';
+// Portable / rehostable base.
+//
+// `base: './'` makes Vite emit RELATIVE asset URLs, so the built `dist/` works
+// unchanged at ANY mount path — `/`, `/Swipe-GT/`, `/anything/` — with no
+// rebuild. This is the single source of truth for the base: nothing else in the
+// codebase hardcodes `/Swipe-GT/`. See README "Rehosting / deploying elsewhere".
+//
+// The PWA is kept portable too: the SW's scope is simply the directory it is
+// served from, and the manifest's scope/start_url/icon srcs are RELATIVE so an
+// installed PWA is never pinned to `/Swipe-GT/`.
+const BASE = './';
 
 export default defineConfig({
   base: BASE,
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
-      // Keep the SW and its scope under the app base path.
-      base: BASE,
-      scope: BASE,
+      // Inherit Vite's relative base; do not pin the SW/manifest to a path.
       injectRegister: null, // we register manually in src/pwa/register.ts
       workbox: {
         // Precache the app shell (JS/CSS/HTML) plus local icons/fonts.
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        // SPA fallback: serve the shell for navigations while offline.
-        navigateFallback: `${BASE}index.html`,
+        // SPA fallback: serve the shell for navigations while offline. Relative
+        // so it resolves against the SW scope (the directory it is served from),
+        // working under any mount path.
+        navigateFallback: 'index.html',
         // Never let the SW answer cross-origin navigations (e.g. the GIS popup).
         navigateFallbackDenylist: [/^https?:\/\//i],
         runtimeCaching: [
@@ -61,15 +69,17 @@ export default defineConfig({
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait',
-        scope: BASE,
-        start_url: BASE,
-        // Absolute, base-prefixed srcs so they resolve under /g-tasks/ regardless
-        // of the manifest's own URL.
+        // Relative scope/start_url so the installed PWA is anchored to wherever
+        // the manifest is served from, not a fixed `/Swipe-GT/`.
+        scope: '.',
+        start_url: '.',
+        // Relative srcs — resolved against the manifest's own URL (dist root),
+        // so they work under any mount path.
         icons: [
-          { src: `${BASE}icons/icon-192.png`, sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: `${BASE}icons/icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
           {
-            src: `${BASE}icons/icon-maskable-512.png`,
+            src: 'icons/icon-maskable-512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',

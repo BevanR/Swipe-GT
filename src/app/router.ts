@@ -1,7 +1,8 @@
 /**
- * A tiny hash-based router for the PWA. This app ships as a static GitHub Pages
- * site served under the base `/Swipe-GT/`, so it MUST use hash routing (never
- * history/pushState paths, which would 404 on reload).
+ * A tiny hash-based router for the PWA. This app ships as a static site served
+ * under an arbitrary base path (relative build — see vite.config.ts), so it MUST
+ * use hash routing (never history/pushState paths, which would 404 on reload and
+ * would also couple routes to a fixed base).
  *
  * The route model is a small discriminated union so it can grow: today it
  * supports the main list (`#/`) and the Add Task screen (`#/add`); it is shaped
