@@ -1,5 +1,5 @@
-import { LitElement, css, html, nothing } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { LitElement, css, html } from 'lit';
+import { customElement, property, query, state } from 'lit/decorators.js';
 import '@material/web/dialog/dialog.js';
 import '@material/web/list/list.js';
 import '@material/web/list/list-item.js';
@@ -66,10 +66,38 @@ export class SnoozeMenu extends LitElement {
       color: var(--app-on-surface-muted);
       font-size: 0.8rem;
     }
+    /* The pick-a-date row is collapsed by default — the input is always in the
+       DOM (so showPicker() has a target inside the tap gesture) but hidden until
+       we need the visible fallback. */
     .pickrow {
       display: flex;
       justify-content: flex-end;
+      padding: 0;
+      height: 0;
+      overflow: hidden;
+    }
+    .pickrow.show {
       padding: 8px 16px 4px;
+      height: auto;
+      overflow: visible;
+    }
+    /* Hidden-but-rendered date input (present so showPicker() works); revealed
+       as a normal field only when .show (the no-showPicker fallback). */
+    input.pickdate {
+      position: absolute;
+      opacity: 0;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      border: 0;
+      pointer-events: none;
+    }
+    input.pickdate.show {
+      position: static;
+      opacity: 1;
+      width: auto;
+      height: auto;
+      pointer-events: auto;
     }
     input[type='date'] {
       appearance: none;
@@ -100,6 +128,9 @@ export class SnoozeMenu extends LitElement {
    * Reset each time the "Pick a date" affordance is revealed.
    */
   private pickHandled = false;
+
+  /** The always-rendered (hidden) native date input backing "Pick a date". */
+  @query('input.pickdate') private dateInput?: HTMLInputElement;
 
   private dialog(): MdDialog | null {
     return this.renderRoot.querySelector('md-dialog');
@@ -216,20 +247,6 @@ export class SnoozeMenu extends LitElement {
         void d.close();
       }
     }
-    if (changed.has('picking') && this.picking) {
-      // Open the OS date picker directly (one tap) once the input has rendered.
-      // showPicker() throws when unsupported or not user-activated — fall back to
-      // focus, leaving the revealed input as the usable fallback UI.
-      void this.updateComplete.then(() => {
-        const input = this.renderRoot.querySelector<HTMLInputElement>('input[type="date"]');
-        if (!input) return;
-        try {
-          input.showPicker();
-        } catch {
-          input.focus();
-        }
-      });
-    }
   }
 
   private pick(option: SnoozeOption): void {
@@ -243,10 +260,29 @@ export class SnoozeMenu extends LitElement {
     );
   }
 
-  /** Reveal the inline native date input for an arbitrary date. */
-  private startPick(): void {
+  /**
+   * Open the OS date picker for "Pick a date". Called SYNCHRONOUSLY from the tap
+   * handler so it runs inside the user-activation window — the previous approach
+   * called showPicker() in a later `updated()` microtask, which Android rejects
+   * (no activation), so it fell back to focus() and the picker never opened. The
+   * date input is always in the DOM (hidden), so showPicker() has a target now.
+   * If showPicker() is unsupported/throws, reveal the input as a visible fallback.
+   */
+  private onPickClick(): void {
     this.pickHandled = false;
-    this.picking = true;
+    const inp = this.dateInput;
+    if (!inp) {
+      this.picking = true;
+      return;
+    }
+    try {
+      inp.showPicker();
+    } catch {
+      // Older browsers / no support: reveal the field and focus it so the user
+      // can still open it with a direct tap.
+      this.picking = true;
+      void this.updateComplete.then(() => this.dateInput?.focus());
+    }
   }
 
   /**
@@ -307,11 +343,11 @@ export class SnoozeMenu extends LitElement {
             type="button"
             role="menuitem"
             aria-label="Pick a date"
-            @click=${() => this.startPick()}
+            @click=${() => this.onPickClick()}
             @keydown=${(e: KeyboardEvent) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                this.startPick();
+                this.onPickClick();
               }
             }}
           >
@@ -319,16 +355,15 @@ export class SnoozeMenu extends LitElement {
             <span slot="supporting-text" class="date">Choose any date</span>
           </md-list-item>
         </md-list>
-        ${this.picking
-          ? html`<div class="pickrow" slot="content">
-              <input
-                type="date"
-                aria-label="Pick a due date"
-                @change=${(e: Event) => this.onPickDate(e)}
-                @input=${(e: Event) => this.onPickDate(e)}
-              />
-            </div>`
-          : nothing}
+        <div class="pickrow ${this.picking ? 'show' : ''}" slot="content">
+          <input
+            class="pickdate ${this.picking ? 'show' : ''}"
+            type="date"
+            aria-label="Pick a due date"
+            @change=${(e: Event) => this.onPickDate(e)}
+            @input=${(e: Event) => this.onPickDate(e)}
+          />
+        </div>
         <div slot="actions" class="actions">
           <md-text-button @click=${() => this.cancel()}>Cancel</md-text-button>
         </div>

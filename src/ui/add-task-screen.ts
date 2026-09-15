@@ -1,4 +1,4 @@
-import { LitElement, css, html, nothing } from 'lit';
+import { LitElement, css, html } from 'lit';
 import { customElement, property, query, state } from 'lit/decorators.js';
 import '@material/web/textfield/outlined-text-field.js';
 import '@material/web/select/outlined-select.js';
@@ -139,22 +139,41 @@ export class AddTaskScreen extends LitElement {
       margin-bottom: 8px;
     }
     input[type='date'] {
-      margin-top: 12px;
       appearance: none;
       font: inherit;
       font-size: 0.95rem;
       color: var(--app-on-surface);
       background: var(--app-surface);
-      border: 1px solid var(--app-border);
       border-radius: 8px;
-      padding: 12px;
       color-scheme: light dark;
-      width: 100%;
       box-sizing: border-box;
     }
     input[type='date']:focus-visible {
       outline: 2px solid var(--app-accent);
       outline-offset: -1px;
+    }
+    /* The date input is ALWAYS rendered (so showPicker() has a target inside the
+       tap gesture) but hidden until "Pick a date" is chosen — then .show reveals
+       it as a normal, tappable field (the no-showPicker fallback). */
+    input.pickdate {
+      position: absolute;
+      opacity: 0;
+      width: 1px;
+      height: 1px;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      pointer-events: none;
+    }
+    input.pickdate.show {
+      position: static;
+      opacity: 1;
+      width: 100%;
+      height: auto;
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid var(--app-border);
+      pointer-events: auto;
     }
     @media (prefers-reduced-motion: reduce) {
       :host {
@@ -182,7 +201,8 @@ export class AddTaskScreen extends LitElement {
   private dueOptions: DueOption[] = buildAddDueOptions(new Date());
 
   @query('md-outlined-text-field') private titleField?: MdOutlinedTextField;
-  @query('input[type="date"]') private dateInput?: HTMLInputElement;
+  /** The always-rendered (hidden until "Pick a date") native date input. */
+  @query('input.pickdate') private dateInput?: HTMLInputElement;
 
   connectedCallback(): void {
     super.connectedCallback();
@@ -217,23 +237,25 @@ export class AddTaskScreen extends LitElement {
         hasSomeday: this.somedayListId != null,
       });
     }
-    // Open the OS date picker directly the moment "Pick a date" is chosen.
-    if (changed.has('dueKey') && this.dueKey === 'pick') {
-      void this.updateComplete.then(() => this.openDatePicker());
-    }
   }
 
   /**
-   * Open the native date picker in one tap. showPicker() throws when unsupported
-   * or not user-activated, so fall back to focusing the (still-revealed) input.
+   * Handle a due-dropdown change. Sets the selected key and, when "Pick a date"
+   * is chosen, opens the OS date picker SYNCHRONOUSLY within this handler — the
+   * md-select change is a user gesture, so showPicker() runs inside the
+   * user-activation window (the previous code called it in a later `updated()`
+   * microtask, which Android rejects for lack of activation). The date input is
+   * always in the DOM (hidden), so showPicker() has a target. If it throws
+   * (unsupported/blocked), the now-visible `.show` field is the tappable fallback.
    */
-  private openDatePicker(): void {
-    const input = this.dateInput;
-    if (!input) return;
-    try {
-      input.showPicker();
-    } catch {
-      input.focus();
+  private onDueChange(e: Event): void {
+    this.dueKey = (e.target as HTMLSelectElement).value;
+    if (this.dueKey === 'pick') {
+      try {
+        this.dateInput?.showPicker();
+      } catch {
+        // No showPicker support/activation: the field is revealed as a fallback.
+      }
     }
   }
 
@@ -361,7 +383,7 @@ export class AddTaskScreen extends LitElement {
             <md-outlined-select
               aria-labelledby="due-label"
               .value=${this.dueKey}
-              @change=${(e: Event) => (this.dueKey = (e.target as HTMLSelectElement).value)}
+              @change=${(e: Event) => this.onDueChange(e)}
             >
               ${this.dueOptions.map(
                 (opt) => html`<md-select-option
@@ -371,15 +393,14 @@ export class AddTaskScreen extends LitElement {
                 >`,
               )}
             </md-outlined-select>
-            ${this.dueKey === 'pick'
-              ? html`<input
-                  type="date"
-                  aria-label="Pick a due date"
-                  .value=${this.pickedDate}
-                  @change=${(e: Event) => this.onPickDate(e)}
-                  @input=${(e: Event) => this.onPickDate(e)}
-                />`
-              : nothing}
+            <input
+              class="pickdate ${this.dueKey === 'pick' ? 'show' : ''}"
+              type="date"
+              aria-label="Pick a due date"
+              .value=${this.pickedDate}
+              @change=${(e: Event) => this.onPickDate(e)}
+              @input=${(e: Event) => this.onPickDate(e)}
+            />
           </div>
 
           <button type="submit" hidden aria-hidden="true"></button>
