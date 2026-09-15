@@ -1,6 +1,6 @@
 // Headless smoke check for the built PWA.
 //
-// Serves the built `dist/` with `vite preview` (which honours base: '/g-tasks/'),
+// Serves the built `dist/` with `vite preview` (which honours base: '/Swipe-GT/'),
 // loads it in the pre-installed Chromium via Playwright, and fails loudly on ANY
 // error signal (console errors, uncaught exceptions / syntax errors, failed
 // requests) or if the app does not actually render its Connect screen.
@@ -17,7 +17,7 @@ import process from 'node:process';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const PORT = 4173;
-const BASE_URL = `http://localhost:${PORT}/g-tasks/`;
+const BASE_URL = `http://localhost:${PORT}/Swipe-GT/`;
 
 function waitForPort(port, timeoutMs = 30000) {
   const start = Date.now();

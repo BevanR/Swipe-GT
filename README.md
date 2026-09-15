@@ -11,7 +11,7 @@ Two themes ("inbox" and "tasks"). No backend — authentication is done entirely
 in the browser via Google Identity Services (GIS), and data is fetched directly
 from the Google Tasks REST API. Deployed to GitHub Pages at:
 
-**https://bevanr.github.io/g-tasks/**
+**https://bevanr.github.io/Swipe-GT/**
 
 ---
 
@@ -116,5 +116,5 @@ The workflow passes it to the build as
 `VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}`.
 
 Also ensure Pages is enabled with **Source: GitHub Actions**
-(*Settings → Pages*). The site is served under `/g-tasks/`, which is why Vite's
-`base` is set to `/g-tasks/`.
+(*Settings → Pages*). The site is served under `/Swipe-GT/`, which is why Vite's
+`base` is set to `/Swipe-GT/`.

@@ -1,6 +1,6 @@
 /**
  * A tiny hash-based router for the PWA. This app ships as a static GitHub Pages
- * site served under the base `/g-tasks/`, so it MUST use hash routing (never
+ * site served under the base `/Swipe-GT/`, so it MUST use hash routing (never
  * history/pushState paths, which would 404 on reload).
  *
  * The route model is a small discriminated union so it can grow: today it

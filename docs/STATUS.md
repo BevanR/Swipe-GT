@@ -3,7 +3,7 @@
 A static, installable PWA that shows Google Tasks (due today / overdue / no-date)
 as a swipeable list. Swipe right to complete, swipe left to snooze. Browser-only
 auth via Google Identity Services (no backend). Deployed to GitHub Pages at
-**https://bevanr.github.io/g-tasks/**.
+**https://bevanr.github.io/Swipe-GT/**.
 
 This doc is the durable handoff for humans and future agents. Keep it current.
 
@@ -74,7 +74,7 @@ scripts/
 
 ## Locked-in decisions (do not re-litigate)
 
-- **GitHub Pages**, static only, base path `/g-tasks/`. No backend, no serverless.
+- **GitHub Pages**, static only, base path `/Swipe-GT/`. No backend, no serverless.
 - **GIS token flow**, silent-refresh only, no refresh token, no client secret.
 - Scope `auth/tasks` only.
 - **TypeScript experimental decorators** (`experimentalDecorators: true`, `useDefineForClassFields: false`), Lit components use `@customElement`/`@property`/`@state` **without** the `accessor` keyword. Vite 8 transpiles via rolldown/Oxc, which does **not** lower standard decorators/`accessor` — using them ships raw syntax that crashes the browser (blank page). This is why the smoke gate exists.

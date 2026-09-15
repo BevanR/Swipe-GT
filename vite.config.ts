@@ -1,9 +1,9 @@
 import { defineConfig } from 'vitest/config';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// GitHub Pages serves this repo at https://bevanr.github.io/g-tasks/
-// so every asset path, the SW scope, and the manifest must live under /g-tasks/.
-const BASE = '/g-tasks/';
+// GitHub Pages serves this repo at https://bevanr.github.io/Swipe-GT/
+// so every asset path, the SW scope, and the manifest must live under /Swipe-GT/.
+const BASE = '/Swipe-GT/';
 
 export default defineConfig({
   base: BASE,
