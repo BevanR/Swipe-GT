@@ -1,4 +1,5 @@
 import { LitElement, css, html } from 'lit';
+import type { PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { SnoozeOption, Task } from '../types';
 import { computeSnoozeOptions } from '../logic/snooze';
@@ -568,6 +569,23 @@ export class TaskCard extends LitElement {
   }
 
   /** Slide the front fully out in `dir`, revealing the coloured action bar. */
+  /**
+   * The list is keyed by task id, so after a snooze/no-date/someday commit the
+   * SAME element is reused if the task stays in the current view (e.g. snoozing
+   * a Now task to today/a past date keeps it in Now). Its fly-out/collapse inline
+   * styles (height:0, offset) would otherwise persist and the row would look
+   * "disappeared" until a remount. When the bound task changes, clear those.
+   */
+  protected willUpdate(changed: PropertyValues): void {
+    if (changed.has('task') && changed.get('task') !== undefined) {
+      this.style.height = '';
+      this.style.transition = '';
+      this.offset = 0;
+      this.animating = false;
+      this.completing = false;
+    }
+  }
+
   private slideOut(dir: 'left' | 'right'): void {
     this.animating = true;
     this.offset = (dir === 'right' ? 1 : -1) * this.width() * 1.15;
