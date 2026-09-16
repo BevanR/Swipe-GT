@@ -622,6 +622,7 @@ export class TaskListView extends LitElement {
             <button
               class="iconbtn"
               aria-label="Search"
+              title="Search (/)"
               aria-pressed=${this.searchOpen}
               @click=${() => this.toggleSearch()}
             >
@@ -634,6 +635,7 @@ export class TaskListView extends LitElement {
             <button
               class="iconbtn ${this.loading ? 'spin' : ''}"
               aria-label="Refresh"
+              title="Refresh"
               @click=${() =>
                 this.dispatchEvent(
                   new CustomEvent('refresh', { bubbles: true, composed: true }),
@@ -648,6 +650,7 @@ export class TaskListView extends LitElement {
             <button
               class="iconbtn"
               aria-label="Settings"
+              title="Settings"
               @click=${() =>
                 this.dispatchEvent(
                   new CustomEvent('open-settings', { bubbles: true, composed: true }),
@@ -677,6 +680,7 @@ export class TaskListView extends LitElement {
                   ? html`<button
                       class="iconbtn"
                       aria-label="Clear search"
+                      title="Clear search"
                       @click=${() => this.clearSearch()}
                     >
                       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -690,10 +694,11 @@ export class TaskListView extends LitElement {
             : nothing}
           <div class="viewswitch" role="group" aria-label="View">
             ${VIEWS.map(
-              (v) => html`
+              (v, i) => html`
                 <button
                   aria-pressed=${this.view === v.key}
                   aria-label=${v.label}
+                  title=${`${v.label} (${i + 1})`}
                   @click=${() => this.setView(v.key)}
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d=${v.icon} /></svg>
@@ -751,7 +756,12 @@ export class TaskListView extends LitElement {
                   </div>`}
         </main>
 
-        <button class="fab" aria-label="Add task" @click=${() => navigate('add')}>
+        <button
+          class="fab"
+          aria-label="Add task"
+          title="Add task (a)"
+          @click=${() => navigate('add')}
+        >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" />
           </svg>

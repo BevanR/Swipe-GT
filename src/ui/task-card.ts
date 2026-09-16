@@ -720,6 +720,7 @@ export class TaskCard extends LitElement {
                 class="undo-btn"
                 type="button"
                 aria-label="Undo complete"
+                title="Undo (u)"
                 @pointerdown=${this.stopDrag}
                 @click=${this.onUndo}
               >
@@ -756,6 +757,7 @@ export class TaskCard extends LitElement {
           class="circle ${this.completing ? 'done' : ''}"
           type="button"
           aria-label=${`Complete task: ${this.task?.title ?? ''}`}
+          title="Complete (c)"
           @pointerdown=${this.stopDrag}
           @click=${this.onCircleComplete}
         >
@@ -776,6 +778,7 @@ export class TaskCard extends LitElement {
           class="snoozebtn"
           type="button"
           aria-label="Snooze task"
+          title="Snooze (s)"
           @pointerdown=${this.stopDrag}
           @click=${this.onSnoozeButton}
         >

@@ -194,8 +194,23 @@ export class EditTaskScreen extends LitElement {
   /** The task id the form was last seeded from (re-seed only on a new task). */
   private seededTaskId: string | null = null;
 
+  /** The Title field, focused on entry (see {@link firstUpdated}). */
+  @query('md-outlined-text-field') private titleField?: MdOutlinedTextField;
   /** The always-rendered (hidden until "Pick a date") native date input. */
   @query('input.pickdate') private dateInput?: HTMLInputElement;
+
+  async firstUpdated(): Promise<void> {
+    // Focus the title field on entry so keyboard users can start typing/editing
+    // immediately (and the on-screen keyboard opens on mobile). Mirrors the Add
+    // screen: await the field's own render, then delegate focus to its inner
+    // native <input>. Guard so it never throws if the field isn't ready.
+    await this.updateComplete;
+    const field = this.titleField;
+    if (!field) return;
+    await field.updateComplete;
+    // MdOutlinedTextField.focus() delegates to its inner native <input>.
+    field.focus();
+  }
 
   willUpdate(): void {
     // Seed the form from the task the first time it arrives (and again only if a
@@ -309,7 +324,12 @@ export class EditTaskScreen extends LitElement {
   }
 
   private onKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape') {
+    // A plain Escape on the form cancels and returns to the list (like Back).
+    // But when another control has already consumed Escape — the Due dropdown
+    // closing its open menu, or the native date picker being dismissed — the
+    // event arrives `defaultPrevented`; leave those to the control so Escape
+    // closes the dropdown/picker instead of exiting the whole screen.
+    if (e.key === 'Escape' && !e.defaultPrevented) {
       e.stopPropagation();
       this.cancel();
     }
@@ -330,7 +350,12 @@ export class EditTaskScreen extends LitElement {
     return html`
       <div class="wrap" @keydown=${(e: KeyboardEvent) => this.onKeydown(e)}>
         <header>
-          <button class="iconbtn" aria-label="Back" @click=${() => this.cancel()}>
+          <button
+            class="iconbtn"
+            aria-label="Back"
+            title="Cancel (Esc)"
+            @click=${() => this.cancel()}
+          >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20z" />
             </svg>
@@ -339,6 +364,7 @@ export class EditTaskScreen extends LitElement {
           <md-text-button
             class="header-action"
             aria-label="Save changes"
+            title="Save"
             ?disabled=${!this.canSave()}
             @click=${() => this.save()}
           >
