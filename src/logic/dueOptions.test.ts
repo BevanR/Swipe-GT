@@ -100,6 +100,34 @@ describe('buildAddDueOptions', () => {
     expect(options[options.length - 2].key).toBe('someday');
     expect(options[options.length - 1].key).toBe('pick');
   });
+
+  // The Due dropdown must show the concrete date each relative option resolves
+  // to, exactly like the Postpone screen (both source their dated options from
+  // computeSnoozeOptions, which bakes the suffix into the label).
+  it('shows the resolved date suffix on each relative option (Wed 2026-09-16)', () => {
+    const labels = Object.fromEntries(
+      buildAddDueOptions(today, { hasSomeday: true }).map((o) => [o.key, o.label]),
+    );
+    expect(labels).toMatchObject({
+      none: 'Now (no date)',
+      today: 'Today', // no suffix
+      tomorrow: 'Tomorrow · Thu 17 Sep',
+      laterThisWeek: 'Later this week · Fri 18 Sep',
+      thisWeekend: 'This weekend · Sat 19 Sep',
+      nextWeek: 'Next week · Mon 21 Sep',
+      nextMonth: 'Next month · Thu 1 Oct',
+      someday: 'Someday', // no suffix
+      pick: 'Pick a date', // no suffix
+    });
+  });
+
+  it('the dateless / literal options carry no "·" date suffix', () => {
+    for (const o of buildAddDueOptions(today, { hasSomeday: true })) {
+      if (['none', 'today', 'someday', 'pick'].includes(o.key)) {
+        expect(o.label).not.toContain('·');
+      }
+    }
+  });
 });
 
 describe('resolveAddTarget', () => {

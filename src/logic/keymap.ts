@@ -18,8 +18,10 @@ export type KeyAction =
   | 'next'
   | 'prev'
   | 'edit'
+  | 'rename'
   | 'complete'
   | 'snooze'
+  | 'postpone'
   | 'undo'
   | 'escape'
   | 'help';
@@ -88,11 +90,17 @@ export function keyToAction(key: string, mods: KeyModifiers = {}): KeyAction | n
       return 'prev';
     case 'e':
       return 'edit';
+    case 'r':
+      return 'rename';
     case 'c':
     case 'x':
       return 'complete';
     case 's':
       return 'snooze';
+    // "p" (postpone) and "d" (due) both open the Postpone flow.
+    case 'p':
+    case 'd':
+      return 'postpone';
     case 'u':
     case 'z':
       return 'undo';

@@ -8,10 +8,19 @@ describe('keyToAction', () => {
     expect(keyToAction('c')).toBe('complete');
     expect(keyToAction('x')).toBe('complete');
     expect(keyToAction('s')).toBe('snooze');
+    expect(keyToAction('r')).toBe('rename');
     expect(keyToAction('u')).toBe('undo');
     expect(keyToAction('z')).toBe('undo');
     expect(keyToAction('j')).toBe('next');
     expect(keyToAction('k')).toBe('prev');
+  });
+
+  it('maps both "p" (postpone) and "d" (due) to the postpone action', () => {
+    expect(keyToAction('p')).toBe('postpone');
+    expect(keyToAction('d')).toBe('postpone');
+    // Shift disqualifies them like the other letter shortcuts.
+    expect(keyToAction('p', { shift: true })).toBeNull();
+    expect(keyToAction('d', { shift: true })).toBeNull();
   });
 
   it('maps left/right arrows to view prev/next', () => {

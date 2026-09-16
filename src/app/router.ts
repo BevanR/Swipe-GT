@@ -14,16 +14,26 @@
 export type Route =
   | { name: 'list'; params: Record<string, never> }
   | { name: 'add'; params: Record<string, never> }
-  | { name: 'edit'; params: { listId: string; taskId: string } };
+  | { name: 'edit'; params: { listId: string; taskId: string } }
+  | { name: 'snooze'; params: { listId: string; taskId: string } };
 
 /** The route names that can be navigated to programmatically today. */
-export type NavTarget = 'list' | 'add' | 'edit';
+export type NavTarget = 'list' | 'add' | 'edit' | 'snooze';
 
-/** Params required to build/navigate to an `edit` route. */
-export interface EditParams {
+/**
+ * Params required to build/navigate to a task-scoped route (`edit` or `snooze`),
+ * both of which are keyed by a task's list id + task id.
+ */
+export interface TaskRouteParams {
   listId: string;
   taskId: string;
 }
+
+/**
+ * @deprecated Use {@link TaskRouteParams}. Kept as an alias so existing call
+ * sites/tests that import `EditParams` keep compiling.
+ */
+export type EditParams = TaskRouteParams;
 
 /**
  * Parse a raw `location.hash` (e.g. `#/add`, `#/`, ``) into a {@link Route}.
@@ -56,6 +66,20 @@ export function parseHash(hash: string): Route {
         };
       }
       return { name: 'list', params: {} };
+    case 'snooze':
+      // #/snooze/<listId>/<taskId> — both segments required; otherwise fall back.
+      // Ids are percent-decoded so a reserved-char id (e.g. `@default`) round
+      // trips back for state lookups, mirroring the `edit` branch above.
+      if (parts.length >= 3 && parts[1] && parts[2]) {
+        return {
+          name: 'snooze',
+          params: {
+            listId: safeDecode(parts[1]),
+            taskId: safeDecode(parts[2]),
+          },
+        };
+      }
+      return { name: 'list', params: {} };
     default:
       return { name: 'list', params: {} };
   }
@@ -75,10 +99,13 @@ function safeDecode(segment: string): string {
  * {@link EditParams}; its ids are percent-encoded so reserved characters survive
  * the round trip through {@link parseHash}.
  */
-export function hashFor(target: NavTarget, params?: EditParams): string {
+export function hashFor(target: NavTarget, params?: TaskRouteParams): string {
   if (target === 'add') return '#/add';
   if (target === 'edit' && params) {
     return `#/edit/${encodeURIComponent(params.listId)}/${encodeURIComponent(params.taskId)}`;
+  }
+  if (target === 'snooze' && params) {
+    return `#/snooze/${encodeURIComponent(params.listId)}/${encodeURIComponent(params.taskId)}`;
   }
   return '#/';
 }
@@ -91,7 +118,7 @@ export function hashFor(target: NavTarget, params?: EditParams): string {
 let navigatedWithinApp = false;
 
 /** Navigate to a route by setting the location hash (pushes a history entry). */
-export function navigate(target: NavTarget, params?: EditParams): void {
+export function navigate(target: NavTarget, params?: TaskRouteParams): void {
   navigatedWithinApp = true;
   if (typeof location !== 'undefined') {
     location.hash = hashFor(target, params);

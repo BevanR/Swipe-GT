@@ -109,16 +109,45 @@ describe('computeSnoozeOptions — per weekday', () => {
 });
 
 describe('computeSnoozeOptions — labels and shape', () => {
-  it('emits the exact labels for each key', () => {
-    const opts = computeSnoozeOptions(MON); // Monday shows all five
+  it('emits the exact labels (with resolved-date suffix) for each key', () => {
+    const opts = computeSnoozeOptions(MON); // Monday 2026-06-01 shows all five
     const labels = Object.fromEntries(opts.map((o) => [o.key, o.label]));
+    // Each relative option carries the concrete date it resolves to, using a
+    // short weekday (never ISO), joined with " · ".
     expect(labels).toEqual({
-      tomorrow: 'Tomorrow',
-      laterThisWeek: 'Later this week',
-      thisWeekend: 'This weekend',
-      nextWeek: 'Next week',
-      nextMonth: 'Next month',
+      tomorrow: 'Tomorrow · Tue 2 Jun',
+      laterThisWeek: 'Later this week · Wed 3 Jun',
+      thisWeekend: 'This weekend · Sat 6 Jun',
+      nextWeek: 'Next week · Mon 8 Jun',
+      nextMonth: 'Next month · Wed 1 Jul',
     });
+  });
+
+  it('the "Today" option has NO resolved-date suffix', () => {
+    const opts = computeSnoozeOptions(MON, { includeToday: true });
+    const today = opts.find((o) => o.key === 'today');
+    expect(today?.label).toBe('Today');
+    expect(today?.label).not.toContain('·');
+  });
+
+  it('the dateless "Now" and "Someday" options have plain labels (no suffix)', () => {
+    const opts = computeSnoozeOptions(MON, { includeNow: true, includeSomeday: true });
+    const now = opts.find((o) => o.key === 'now');
+    const someday = opts.find((o) => o.key === 'someday');
+    expect(now?.label).toBe('Now');
+    expect(someday?.label).toBe('Someday');
+  });
+
+  it('appends the correct short-weekday date across a year rollover', () => {
+    const dec28 = new Date(2026, 11, 28); // Mon 2026-12-28
+    const labels = Object.fromEntries(
+      computeSnoozeOptions(dec28).map((o) => [o.key, o.label]),
+    );
+    // nextMonth resolves to 2027-01-01 (a Friday) → carries the year? No: the
+    // suffix omits the year only when it matches "today"'s year, and here today
+    // is 2026 while the date is 2027, so the year IS shown.
+    expect(labels.nextMonth).toBe('Next month · Fri 1 Jan 2027');
+    expect(labels.tomorrow).toBe('Tomorrow · Tue 29 Dec');
   });
 
   it('always includes tomorrow', () => {

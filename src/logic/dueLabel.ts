@@ -17,6 +17,17 @@ export const WEEKDAYS = [
   'Saturday',
 ] as const;
 
+/** 3-letter weekday names indexed by `Date.prototype.getDay()` (0 = Sunday). */
+export const WEEKDAYS_SHORT = [
+  'Sun',
+  'Mon',
+  'Tue',
+  'Wed',
+  'Thu',
+  'Fri',
+  'Sat',
+] as const;
+
 /** 3-letter month names indexed by `Date.prototype.getMonth()` (0 = January). */
 const MONTHS_SHORT = [
   'Jan',
@@ -99,5 +110,21 @@ export function formatFullDate(date: string, today: Date = new Date()): string {
   const [dy, dm, dd] = date.split('-').map(Number) as [number, number, number];
   const dueDow = new Date(dy, dm - 1, dd).getDay();
   const label = `${WEEKDAYS[dueDow]} ${dd} ${MONTHS_SHORT[dm - 1]}`;
+  return dy === today.getFullYear() ? label : `${label} ${dy}`;
+}
+
+/**
+ * Format a date as a compact absolute date with a SHORT weekday, e.g.
+ * `Wed 17 Sep` (with a trailing year only when it differs from today's year).
+ * Used for the resolved-date suffix shown on the relative Postpone/Due options
+ * (e.g. `Tomorrow · Wed 17 Sep`).
+ *
+ * @param date  Date-only string 'YYYY-MM-DD'.
+ * @param today Reference for the "same year" check; defaults to `new Date()`.
+ */
+export function formatShortDate(date: string, today: Date = new Date()): string {
+  const [dy, dm, dd] = date.split('-').map(Number) as [number, number, number];
+  const dueDow = new Date(dy, dm - 1, dd).getDay();
+  const label = `${WEEKDAYS_SHORT[dueDow]} ${dd} ${MONTHS_SHORT[dm - 1]}`;
   return dy === today.getFullYear() ? label : `${label} ${dy}`;
 }

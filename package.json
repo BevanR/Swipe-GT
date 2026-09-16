@@ -12,7 +12,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/smoke.mjs",
-    "smoke:build": "npm run build && node scripts/smoke.mjs"
+    "smoke:build": "npm run build && node scripts/smoke.mjs",
+    "test:e2e": "node scripts/e2e-keyboard.mjs",
+    "test:e2e:build": "npm run build && node scripts/e2e-keyboard.mjs"
   },
   "dependencies": {
     "@material/web": "^2.5.0",

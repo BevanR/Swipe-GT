@@ -1,4 +1,5 @@
 import type { SnoozeOption } from '../types';
+import { formatShortDate } from './dueLabel';
 
 /**
  * Compute the snooze menu options relative to `today`.
@@ -15,6 +16,10 @@ import type { SnoozeOption } from '../types';
  *
  * Options that do not apply for the given day (e.g. `laterThisWeek` on a
  * Thursday) are omitted from the returned array.
+ *
+ * Each dated relative option's `label` carries the resolved date as a suffix
+ * (e.g. `Tomorrow · Wed 17 Sep`) via {@link formatShortDate}. "Today" and the
+ * dateless `now`/`someday` options carry a plain label with no suffix.
  *
  * All dates are built from LOCAL calendar components so that DST transitions
  * and month/year rollovers are handled correctly (never via UTC arithmetic).
@@ -47,8 +52,15 @@ export function computeSnoozeOptions(
 
   const options: SnoozeOption[] = [];
 
+  // Each relative dated option (Tomorrow … Next month) shows the concrete date it
+  // resolves to as a suffix, e.g. "Tomorrow · Wed 17 Sep", so the user sees the
+  // actual day without doing the arithmetic. "Today" is the one dated option that
+  // gets NO suffix (the word already says the date).
+  const dated = (label: string, date: string): string =>
+    `${label} · ${formatShortDate(date, today)}`;
+
   // 0. Today — shown whenever the task isn't already due exactly today (pull an
-  //    overdue, future, or no-date task onto today).
+  //    overdue, future, or no-date task onto today). No resolved-date suffix.
   if (opts?.includeToday) {
     options.push({
       key: 'today',
@@ -58,44 +70,37 @@ export function computeSnoozeOptions(
   }
 
   // 1. Tomorrow — always shown.
-  options.push({
-    key: 'tomorrow',
-    label: 'Tomorrow',
-    date: addDays(year, month, day, 1),
-  });
+  {
+    const date = addDays(year, month, day, 1);
+    options.push({ key: 'tomorrow', label: dated('Tomorrow', date), date });
+  }
 
   // 2. Later this week — Mon/Tue/Wed only, always +2 days (Mon→Wed, Tue→Thu,
   //    Wed→Fri). Hidden Thu, Fri, Sat, Sun.
   if (dow >= 1 && dow <= 3) {
-    options.push({
-      key: 'laterThisWeek',
-      label: 'Later this week',
-      date: addDays(year, month, day, 2),
-    });
+    const date = addDays(year, month, day, 2);
+    options.push({ key: 'laterThisWeek', label: dated('Later this week', date), date });
   }
 
   // 3. This weekend — upcoming Saturday; if today is Sat/Sun, the following one.
   const daysToSat = dow === 6 ? 7 : (6 - dow + 7) % 7;
-  options.push({
-    key: 'thisWeekend',
-    label: 'This weekend',
-    date: addDays(year, month, day, daysToSat),
-  });
+  {
+    const date = addDays(year, month, day, daysToSat);
+    options.push({ key: 'thisWeekend', label: dated('This weekend', date), date });
+  }
 
   // 4. Next week — upcoming Monday; if today is Monday, the following one.
   const daysToMon = dow === 1 ? 7 : (1 - dow + 7) % 7;
-  options.push({
-    key: 'nextWeek',
-    label: 'Next week',
-    date: addDays(year, month, day, daysToMon),
-  });
+  {
+    const date = addDays(year, month, day, daysToMon);
+    options.push({ key: 'nextWeek', label: dated('Next week', date), date });
+  }
 
   // 5. Next month — the 1st of next calendar month (year rolls over in Dec).
-  options.push({
-    key: 'nextMonth',
-    label: 'Next month',
-    date: toLocalDateString(new Date(year, month + 1, 1)),
-  });
+  {
+    const date = toLocalDateString(new Date(year, month + 1, 1));
+    options.push({ key: 'nextMonth', label: dated('Next month', date), date });
+  }
 
   // 6. Now — land the task in the Now view (dateless). Sits just after the date
   //    options (and before Someday when both are shown).

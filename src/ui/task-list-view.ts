@@ -479,12 +479,17 @@ export class TaskListView extends LitElement {
     this.cardFor(id)?.completeFromKeyboard();
   }
 
-  /** Open the snooze menu on the selected task (or the first visible one). */
+  /**
+   * Open the Postpone route for the selected task (or the first visible one).
+   * Navigates to `#/snooze/<listId>/<taskId>` — the same full-viewport screen the
+   * card's snooze button and left-swipe open — rather than an in-list menu.
+   */
   snoozeSelected(): void {
     const id = resolveActingId(this.visibleIds(), this.selectedTaskId);
     if (id == null) return;
     this.selectedTaskId = id;
-    this.cardFor(id)?.openSnoozeFromKeyboard();
+    const task = this.orderedVisibleTasks().find((t) => t.id === id);
+    if (task) navigate('snooze', { listId: task.taskListId, taskId: task.id });
   }
 
   /**

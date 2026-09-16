@@ -12,6 +12,7 @@ import './task-list-view.js';
 import './settings-screen.js';
 import './add-task-screen.js';
 import './edit-task-screen.js';
+import './snooze-screen.js';
 
 /**
  * Top-level shell. Subscribes to the controller's state and renders the current
@@ -257,8 +258,15 @@ export class AppRoot extends LitElement {
         view?.completeSelected();
         break;
       case 'snooze':
+      case 'postpone':
+        // `s`, `p` and `d` all open the Postpone route for the selected task.
         e.preventDefault();
         view?.snoozeSelected();
+        break;
+      case 'rename':
+        // `r` opens the edit screen (which focuses the title field on mount).
+        e.preventDefault();
+        view?.editSelected();
         break;
       case 'undo': {
         e.preventDefault();
@@ -324,8 +332,9 @@ export class AppRoot extends LitElement {
       [html`<kbd>j</kbd> <kbd>↓</kbd>`, 'Next task'],
       [html`<kbd>k</kbd> <kbd>↑</kbd>`, 'Previous task'],
       [html`<kbd>e</kbd> <kbd>Enter</kbd>`, 'Edit selected task'],
+      [html`<kbd>r</kbd>`, 'Rename (edit) selected task'],
       [html`<kbd>c</kbd> <kbd>x</kbd>`, 'Complete selected task'],
-      [html`<kbd>s</kbd>`, 'Snooze selected task'],
+      [html`<kbd>s</kbd> <kbd>p</kbd> <kbd>d</kbd>`, 'Postpone selected task'],
       [html`<kbd>u</kbd>`, 'Undo last complete'],
       [html`<kbd>Esc</kbd>`, 'Close search / clear selection'],
       [html`<kbd>?</kbd>`, 'Toggle this help'],
@@ -399,6 +408,18 @@ export class AppRoot extends LitElement {
           }
           // Stale/deep-linked hash to a task we don't hold (e.g. it was completed
           // elsewhere): drop back to the list rather than render an empty editor.
+          navigate('list');
+        }
+        if (this.route.name === 'snooze') {
+          const { listId, taskId } = this.route.params;
+          const task = s.allTasks.find((t) => t.taskListId === listId && t.id === taskId);
+          if (task) {
+            return html`<snooze-screen
+              .task=${task}
+              .somedayListId=${s.somedayListId}
+            ></snooze-screen>`;
+          }
+          // Stale/deep-linked hash to a task we no longer hold: back to the list.
           navigate('list');
         }
         return html`<task-list-view

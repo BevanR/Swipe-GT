@@ -1,9 +1,9 @@
 import { LitElement, css, html } from 'lit';
 import type { PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import type { SnoozeOption, Task } from '../types';
-import { computeSnoozeOptions } from '../logic/snooze';
+import type { Task } from '../types';
 import { formatDueLabel } from '../logic/dueLabel';
+import { navigate } from '../app/router.js';
 
 /**
  * How a card shows its due date:
@@ -17,7 +17,6 @@ import { formatDueLabel } from '../logic/dueLabel';
 export type DueDisplay = 'auto' | 'hidden' | (string & {});
 import { decideSwipe, isHorizontalSwipe, isVerticalScroll } from './swipe';
 import { UndoTimer } from './undo';
-import './snooze-menu.js';
 
 /**
  * Max pointer travel (px) still counted as a tap rather than a drag. Kept at the
@@ -29,9 +28,10 @@ const TAP_MOVE_SLOP = 8;
 /**
  * A single swipeable, full-bleed task row. Hand-rolled pointer-drag (no gesture
  * lib): drag right past threshold → Complete (green reveal, optimistic fly-out),
- * drag left past threshold → open the Snooze menu (amber reveal). The leading
- * circle also completes. Dispatches `task-complete` and `task-snooze` (detail:
- * { due }) for the controller to act on.
+ * drag left past threshold → open the Postpone screen (amber reveal). The leading
+ * circle also completes. Dispatches `task-complete` for the controller to act on;
+ * postponing navigates to the `#/snooze/<listId>/<taskId>` route, which performs
+ * the snooze/now/someday action itself.
  *
  * The row stays full-bleed in both themes; the Inbox vs Tasks look is driven by
  * theme tokens consumed here (`--app-row-*`): Inbox rows get elevation, rounded
@@ -206,7 +206,7 @@ export class TaskCard extends LitElement {
       color: #fff;
     }
     /* Explicit snooze button on the right of the row — always visible so desktop
-       (no swipe) users can reach the same snooze menu the left-swipe opens.
+       (no swipe) users can reach the same Postpone screen the left-swipe opens.
        Mirrors the icon-button pattern (muted, hover background, accent focus)
        and is themed via tokens, so it works in both the inbox and tasks themes. */
     .snoozebtn {
@@ -312,8 +312,6 @@ export class TaskCard extends LitElement {
   @state() private offset = 0;
   @state() private animating = false;
   @state() private completing = false;
-  @state() private snoozeOpen = false;
-  @state() private snoozeOptions: SnoozeOption[] = [];
   /**
    * True between committing a Complete and it either being undone or the window
    * elapsing. While set, the green bar shows the Undo affordance and the card
@@ -340,28 +338,6 @@ export class TaskCard extends LitElement {
     return due.slice(0, 10) < this.todayStr();
   }
 
-  /**
-   * True only when the task has a due date that equals today (local calendar).
-   * Null-due, future, and overdue tasks are all NOT due today.
-   */
-  private get isDueToday(): boolean {
-    const due = this.task?.due;
-    if (!due) return false;
-    return due.slice(0, 10) === this.todayStr();
-  }
-
-  /**
-   * True when this task is already a dateless task in the Someday list — the one
-   * case where the "Someday" snooze option is pointless (it's already there).
-   */
-  private get isSomedayTask(): boolean {
-    return (
-      this.somedayListId != null &&
-      this.task?.due == null &&
-      this.task?.taskListId === this.somedayListId
-    );
-  }
-
   /** Today's local calendar date as 'YYYY-MM-DD'. */
   private todayStr(): string {
     const now = new Date();
@@ -376,7 +352,7 @@ export class TaskCard extends LitElement {
   private onPointerDown = (e: PointerEvent) => {
     // While a Complete is held behind its Undo window, swallow new gestures on
     // this card so a swipe/tap can't start a second action or re-trigger.
-    if (this.snoozeOpen || this.undoPending) return;
+    if (this.undoPending) return;
     if (e.button !== undefined && e.button !== 0) return; // left button / touch only
     this.dragging = true;
     this.axis = 'none';
@@ -519,18 +495,18 @@ export class TaskCard extends LitElement {
 
   /**
    * Complete this task via the SAME path as the on-screen circle / swipe, so the
-   * ~2s in-gap Undo window still applies. No-op if already completing or the
-   * snooze menu is open.
+   * ~2s in-gap Undo window still applies. No-op if already completing or an Undo
+   * window is open.
    */
   completeFromKeyboard(): void {
-    if (this.completing || this.snoozeOpen || this.undoPending) return;
+    if (this.completing || this.undoPending) return;
     this.animating = true;
     this.flyOutAndComplete();
   }
 
-  /** Open this card's snooze menu (same menu the left-swipe / button opens). */
+  /** Open the Postpone route for this task (same route the button / swipe open). */
   openSnoozeFromKeyboard(): void {
-    if (this.snoozeOpen || this.undoPending) return;
+    if (this.undoPending) return;
     this.openSnooze();
   }
 
@@ -611,88 +587,25 @@ export class TaskCard extends LitElement {
   }
 
   /**
-   * Slide the front out in `dir` then collapse+dispatch. Used by the snooze /
-   * someday / now paths, which commit immediately (no Undo window).
+   * Explicit snooze button (desktop-friendly): same path as a left-swipe commit —
+   * navigate to the full-viewport Postpone route.
    */
-  private flyOutCollapse(dir: 'left' | 'right', dispatch: () => void): void {
-    this.slideOut(dir);
-    this.collapseThenDispatch(dispatch);
-  }
-
-  /** Explicit snooze button (desktop-friendly): same path as a left-swipe commit. */
   private onSnoozeButton = (e: Event) => {
     e.stopPropagation();
-    if (this.snoozeOpen || this.undoPending) return;
+    if (this.undoPending) return;
     this.openSnooze();
   };
 
+  /**
+   * Open the Postpone flow: spring the card back to rest, then navigate to the
+   * `#/snooze/<listId>/<taskId>` route. The route (snooze-screen) computes the
+   * options and performs the chosen snooze/now/someday action itself, so the card
+   * no longer owns any menu state.
+   */
   private openSnooze(): void {
-    // Spring the card back to rest, then raise the menu.
     this.offset = 0;
-    this.snoozeOptions = computeSnoozeOptions(new Date(), {
-      includeToday: !this.isDueToday,
-      includeSomeday: this.somedayListId != null && !this.isSomedayTask,
-      // Offer "Now" unless the task is ALREADY a dateless task in Now — i.e. show
-      // it when the task has a due date to clear OR it's parked in Someday (so it
-      // can be ejected back into Now).
-      includeNow:
-        this.task?.due != null || this.task?.taskListId === this.somedayListId,
-    });
-    this.snoozeOpen = true;
+    navigate('snooze', { listId: this.task.taskListId, taskId: this.task.id });
   }
-
-  private onSnoozePick = (e: CustomEvent<SnoozeOption>) => {
-    e.stopPropagation();
-    this.snoozeOpen = false;
-    const opt = e.detail;
-    // The "Someday" option is dateless and parks the task — dispatch a DISTINCT
-    // event (task-someday) rather than task-snooze (which carries a due date).
-    if (opt.key === 'someday') {
-      this.flyOutCollapse('left', () => {
-        this.dispatchEvent(
-          new CustomEvent('task-someday', {
-            detail: { task: this.task },
-            bubbles: true,
-            composed: true,
-          }),
-        );
-      });
-      return;
-    }
-    // The "Now" option is also dateless: it clears the due date and, when the
-    // task is parked in Someday, ejects it back to the default list so it lands
-    // in Now. Dispatch its own DISTINCT event (task-now), separate from both
-    // task-someday and the dated task-snooze.
-    if (opt.key === 'now') {
-      this.flyOutCollapse('left', () => {
-        this.dispatchEvent(
-          new CustomEvent('task-now', {
-            detail: { task: this.task },
-            bubbles: true,
-            composed: true,
-          }),
-        );
-      });
-      return;
-    }
-    const due = opt.date as string;
-    this.flyOutCollapse('left', () => {
-      this.dispatchEvent(
-        new CustomEvent('task-snooze', {
-          detail: { task: this.task, due },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-    });
-  };
-
-  private onSnoozeCancel = (e: Event) => {
-    e.stopPropagation();
-    this.snoozeOpen = false;
-    this.animating = true;
-    this.offset = 0;
-  };
 
   render() {
     const revealComplete = this.offset > 0;
@@ -777,8 +690,8 @@ export class TaskCard extends LitElement {
         <button
           class="snoozebtn"
           type="button"
-          aria-label="Snooze task"
-          title="Snooze (s)"
+          aria-label="Postpone task"
+          title="Postpone (p)"
           @pointerdown=${this.stopDrag}
           @click=${this.onSnoozeButton}
         >
@@ -789,12 +702,6 @@ export class TaskCard extends LitElement {
           </svg>
         </button>
       </div>
-      <snooze-menu
-        .options=${this.snoozeOptions}
-        .open=${this.snoozeOpen}
-        @snooze-pick=${this.onSnoozePick}
-        @snooze-cancel=${this.onSnoozeCancel}
-      ></snooze-menu>
     `;
   }
 }

@@ -29,6 +29,24 @@ describe('hash router parseHash', () => {
     expect(parseHash('#/edit')).toEqual({ name: 'list', params: {} });
   });
 
+  it('parses the snooze route with params (and falls back on missing segments)', () => {
+    expect(parseHash('#/snooze/list-1/task-9')).toEqual({
+      name: 'snooze',
+      params: { listId: 'list-1', taskId: 'task-9' },
+    });
+    expect(parseHash('#/snooze/list-1')).toEqual({ name: 'list', params: {} });
+    expect(parseHash('#/snooze')).toEqual({ name: 'list', params: {} });
+  });
+
+  it('round-trips a snooze hash back to decoded params', () => {
+    const hash = hashFor('snooze', { listId: '@default', taskId: 'task-9' });
+    expect(hash).toBe('#/snooze/%40default/task-9');
+    expect(parseHash(hash)).toEqual({
+      name: 'snooze',
+      params: { listId: '@default', taskId: 'task-9' },
+    });
+  });
+
   it('builds the hash for a navigable target', () => {
     expect(hashFor('add')).toBe('#/add');
     expect(hashFor('list')).toBe('#/');
