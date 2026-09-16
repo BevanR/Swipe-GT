@@ -91,6 +91,45 @@ export function partitionViews(
   };
 }
 
+/**
+ * A labelled, ordered section of the Now view. The Now view is split so that
+ * tasks scheduled for *today* ("Coming up") read as their own group, separate
+ * from the working set the user should act on right away.
+ */
+export interface NowSection {
+  /** Stable key for keyed rendering ('main' = working set, 'comingUp' = today). */
+  key: 'main' | 'comingUp';
+  /** The section header text, or null to render the section without a header. */
+  label: string | null;
+  /** The tasks in this section, in display order. */
+  tasks: Task[];
+}
+
+/**
+ * Split the Now view's grouped tasks into ordered, labelled display sections:
+ *  1. **Working set** (`main`, no header): overdue tasks first (still styled as
+ *     overdue by the card), then no-date tasks — the flat list Now shows today.
+ *  2. **Coming up** (`comingUp`, header "Coming up"): tasks due *today*.
+ *
+ * Only non-empty sections are returned, so an empty section never contributes a
+ * header. When there are no due-today tasks the result is just the working-set
+ * section (Now looks exactly as it does without this feature); when there ARE
+ * due-today tasks the "Coming up" section always appears, even if it is the only
+ * section. Flattening the sections' `tasks` in order yields the exact top-to-
+ * bottom render/keyboard order for the whole Now view.
+ */
+export function nowSections(grouped: GroupedTasks): NowSection[] {
+  const main = [...grouped.overdue, ...grouped.noDate];
+  const sections: NowSection[] = [];
+  if (main.length > 0) {
+    sections.push({ key: 'main', label: null, tasks: main });
+  }
+  if (grouped.today.length > 0) {
+    sections.push({ key: 'comingUp', label: 'Coming up', tasks: grouped.today });
+  }
+  return sections;
+}
+
 function compareDueThenPosition(a: Task, b: Task): number {
   const da = (a.due as string).slice(0, 10);
   const db = (b.due as string).slice(0, 10);

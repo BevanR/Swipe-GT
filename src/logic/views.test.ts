@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Task } from '../types';
-import { partitionViews } from './views';
+import type { GroupedTasks, Task } from '../types';
+import { nowSections, partitionViews } from './views';
 
 // Reference "today" (local): 2026-09-14.
 const TODAY = new Date(2026, 8, 14);
@@ -164,5 +164,91 @@ describe('partitionViews — membership rules', () => {
     expect(now.noDate).toEqual([]);
     expect(scheduled).toEqual([]);
     expect(someday).toEqual([]);
+  });
+});
+
+describe('nowSections — Now view "Coming up" split', () => {
+  const grouped = (over: string[], tod: string[], no: string[]): GroupedTasks => ({
+    overdue: over.map((id) => task(id, '2026-09-01')),
+    today: tod.map((id) => task(id, '2026-09-14')),
+    noDate: no.map((id) => task(id, null)),
+  });
+
+  it('overdue-only: a single unlabeled working-set section, no "Coming up"', () => {
+    const sections = nowSections(grouped(['o1', 'o2'], [], []));
+    expect(sections).toHaveLength(1);
+    expect(sections[0].key).toBe('main');
+    expect(sections[0].label).toBeNull();
+    expect(ids(sections[0].tasks)).toEqual(['o1', 'o2']);
+  });
+
+  it('no-date-only: a single unlabeled working-set section, no "Coming up"', () => {
+    const sections = nowSections(grouped([], [], ['n1', 'n2']));
+    expect(sections).toHaveLength(1);
+    expect(sections[0].key).toBe('main');
+    expect(sections[0].label).toBeNull();
+    expect(ids(sections[0].tasks)).toEqual(['n1', 'n2']);
+  });
+
+  it('due-today-only: only the "Coming up" section, and its header still appears', () => {
+    const sections = nowSections(grouped([], ['t1', 't2'], []));
+    expect(sections).toHaveLength(1);
+    expect(sections[0].key).toBe('comingUp');
+    expect(sections[0].label).toBe('Coming up');
+    expect(ids(sections[0].tasks)).toEqual(['t1', 't2']);
+  });
+
+  it('mixed: working set (overdue then no-date) followed by "Coming up" (today)', () => {
+    const sections = nowSections(grouped(['o1'], ['t1'], ['n1']));
+    expect(sections.map((s) => s.key)).toEqual(['main', 'comingUp']);
+    expect(sections[0].label).toBeNull();
+    // Working set is overdue first, then no-date — the flat Now order.
+    expect(ids(sections[0].tasks)).toEqual(['o1', 'n1']);
+    expect(sections[1].label).toBe('Coming up');
+    expect(ids(sections[1].tasks)).toEqual(['t1']);
+  });
+
+  it('empty: no sections at all (Now falls back to its empty state)', () => {
+    expect(nowSections(grouped([], [], []))).toEqual([]);
+  });
+
+  it('flattening the sections reproduces the full top-to-bottom Now order', () => {
+    const sections = nowSections(grouped(['o1', 'o2'], ['t1'], ['n1']));
+    expect(ids(sections.flatMap((s) => s.tasks))).toEqual(['o1', 'o2', 'n1', 't1']);
+  });
+
+  it('preserves the incoming order within each group (stable)', () => {
+    const g: GroupedTasks = {
+      overdue: [task('o2', '2026-09-01'), task('o1', '2026-09-02')],
+      today: [task('t2', '2026-09-14'), task('t1', '2026-09-14')],
+      noDate: [task('n2', null), task('n1', null)],
+    };
+    const sections = nowSections(g);
+    expect(ids(sections[0].tasks)).toEqual(['o2', 'o1', 'n2', 'n1']);
+    expect(ids(sections[1].tasks)).toEqual(['t2', 't1']);
+  });
+
+  it('date boundary: due today → "Coming up", due yesterday → working set, due tomorrow → not in Now', () => {
+    // Partition with a fixed today, then feed the Now groups into nowSections so
+    // the date boundary and the section split are exercised end to end.
+    const { now, scheduled } = partitionViews(
+      [
+        task('yesterday', '2026-09-13'),
+        task('today', '2026-09-14'),
+        task('tomorrow', '2026-09-15'),
+      ],
+      null,
+      TODAY,
+    );
+    // Tomorrow is Scheduled, never part of the Now sections.
+    expect(ids(scheduled)).toEqual(['tomorrow']);
+
+    const sections = nowSections(now);
+    expect(sections.map((s) => s.key)).toEqual(['main', 'comingUp']);
+    // Due yesterday is overdue → the working set.
+    expect(ids(sections[0].tasks)).toEqual(['yesterday']);
+    // Due exactly today → "Coming up".
+    expect(sections[1].label).toBe('Coming up');
+    expect(ids(sections[1].tasks)).toEqual(['today']);
   });
 });
