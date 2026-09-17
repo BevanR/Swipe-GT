@@ -52,8 +52,7 @@ src/
   api/tasksApi.ts      Google Tasks REST client (lists, tasks, patch due, complete)
   logic/
     filter.ts          filterAndGroup -> {overdue, today, noDate}; excludes completed
-    views.ts           partitionViews (Now/Scheduled/Someday); nowSections -> ordered
-                       Now sections (working set + "Coming up" = due-today)
+    views.ts           partitionViews (Now/Scheduled/Someday)
     snooze.ts          computeSnoozeOptions(today, {overdue}) -> Postpone/Due options,
                        each with a resolved dated label suffix
     dueLabel.ts        formatDueLabel -> relative words within +/-7d, else "Tuesday 15 Sep";
@@ -115,6 +114,7 @@ Later / needs design:
 Blocked by the public Google Tasks API (would need Google to expose it, or a backend proxying the private API — out of scope for this static PWA):
 - **Recurring-task loop icon** and **hiding "Someday" on repeating tasks** — the API exposes no recurrence field. We only learn a task is recurring when Google *rejects* the cross-list move; that failure now shows a clear toast.
 - **Due time-of-day** (showing/selecting a time) — the API stores date only and normalizes any time to midnight.
+- **"Coming up" (later today) section** — splitting today's tasks by time-of-day needs a backend with due-times; the Google Tasks API is date-only, so this was reverted. Revisit with a time-capable backend (e.g. RememberTheMilk).
 - **Star** — removed. The API has no starred field; Google's native star uses a private API. Revisit only if Google exposes it publicly.
 
 Done since v1: relative/friendly dates, Scheduled bucketing, star removal, Inbox-theme fix, cog centering, add-task FAB, snooze RHS button, mobile density, Material serif-font fix, broaden "Today", client-side search, Someday list + three-view model (Now/Scheduled/Someday), list name off cards, cheerful stable empty states, add-task route (full-viewport, due dropdown incl. Someday, action in header), edit-task route (tap to edit; title/notes/due/move/delete), "Pick a date" everywhere (opens picker directly), "No date" postpone, dark-mode dropdown fix, Scheduled per-card dates only in range buckets, instant optimistic cross-view moves, snappy + reduced-motion, undo-in-the-gap on complete, desktop keyboard shortcuts + selection + help overlay.
@@ -124,7 +124,6 @@ More recent:
 - **Dated option labels**: Postpone AND Add/Edit "Due" relative options now show the resolved date (e.g. "Tomorrow · Wed 17 Sep", "Later this week · Fri 18 Sep") via `formatShortDate` / `WEEKDAYS_SHORT` in `dueLabel.ts`, baked into `computeSnoozeOptions` so both surfaces inherit it. Today/Now/Someday/Pick-a-date stay plain.
 - **Edit screen polish**: focuses the Title field on open; Escape cancels/exits edit (back to list); hover `title` tooltips teaching keyboard shortcuts across the edit screen, list view, and cards.
 - **More keyboard shortcuts**: `p` and `d` = postpone/due (open the Postpone route), `r` = rename (open edit); help overlay updated.
-- **"Coming up" section in the Now view**: due-today tasks split into a labelled "Coming up" section below the (unlabeled) overdue + no-date working set. Logic in the new pure helper `nowSections()` in `src/logic/views.ts`; keyboard selection traverses both sections seamlessly. "Later today" means due-date == today (the API is date-only).
 
 Open decisions the user may revisit: "No date" on a Someday-list task keeps it in Someday (doesn't move it out); the edit screen has a Delete action.
 
@@ -133,5 +132,5 @@ Open decisions the user may revisit: "No date" on a Someday-list task keeps it i
 - Unit tests colocated as `*.test.ts` (Vitest, jsdom, MSW). Pure logic (filter, snooze, dueLabel, views) has thorough date-boundary coverage.
 - Lit components can't be DOM-mounted in the current Vitest setup (decorator/transform limitation); component behavior is covered via the controller data-flow tests + the headless smoke check instead.
 - The smoke check exercises the logged-out connect path only (no real Google login in CI). Real-task rendering is confirmed by manual use with a test-user account.
-- **Playwright keyboard-nav e2e** (`scripts/e2e-keyboard.mjs`, `npm run test:e2e` / `test:e2e:build`): boots the built app in a **logged-in** state with **mocked Google Tasks data** — it seeds the persisted OAuth record in IndexedDB so `AuthClient` returns a token without GIS, intercepts `https://tasks.googleapis.com/*` via `page.route` with fixtures, and blocks the service worker for determinism — then drives real key presses. It asserts selection movement; routing (`e`/`Enter`/`r` → edit, `p`/`d`/`s` → Postpone route, `c`/`x` → complete, `1`/`2`/`3` → views, `?` → help); Escape-on-edit → list; title-focus-on-edit; the Postpone-route arrows/Enter don't leak to the edit screen; and the "Coming up" header + cross-section arrow traversal.
-- This closed the prior gap where keyboard behavior was never exercised (Lit can't mount in vitest/jsdom; smoke only covered the logged-out path). **The gate is now tsc + vitest (314 tests) + `smoke:build` + `test:e2e:build`.**
+- **Playwright keyboard-nav e2e** (`scripts/e2e-keyboard.mjs`, `npm run test:e2e` / `test:e2e:build`): boots the built app in a **logged-in** state with **mocked Google Tasks data** — it seeds the persisted OAuth record in IndexedDB so `AuthClient` returns a token without GIS, intercepts `https://tasks.googleapis.com/*` via `page.route` with fixtures, and blocks the service worker for determinism — then drives real key presses. It asserts selection movement; routing (`e`/`Enter`/`r` → edit, `p`/`d`/`s` → Postpone route, `c`/`x` → complete, `1`/`2`/`3` → views, `?` → help); Escape-on-edit → list; title-focus-on-edit; and the Postpone-route arrows/Enter don't leak to the edit screen.
+- This closed the prior gap where keyboard behavior was never exercised (Lit can't mount in vitest/jsdom; smoke only covered the logged-out path). **The gate is now tsc + vitest (306 tests) + `smoke:build` + `test:e2e:build`.**

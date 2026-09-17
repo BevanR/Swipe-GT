@@ -4,7 +4,6 @@ import { customElement, property, query, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import type { GroupedTasks, Task, TaskList, ViewName } from '../types';
 import { groupScheduled } from '../logic/scheduledGroups.js';
-import { nowSections } from '../logic/views.js';
 import { scheduledDueDisplay } from '../logic/scheduledDueDisplay.js';
 import { partitionSearch } from '../logic/search.js';
 import type { SearchSections } from '../logic/search.js';
@@ -385,11 +384,8 @@ export class TaskListView extends LitElement {
         return this.someday;
       case 'now':
       default:
-        // Now: the working set (overdue then no-date), then the "Coming up"
-        // section (due today). This order matches the section render order in
-        // {@link renderNowSections}, so keyboard nav traverses both sections
-        // seamlessly across the split.
-        return nowSections(this.grouped).flatMap((s) => s.tasks);
+        // Now: overdue first, then today, then no-date.
+        return [...this.grouped.overdue, ...this.grouped.today, ...this.grouped.noDate];
     }
   }
 
@@ -580,38 +576,6 @@ export class TaskListView extends LitElement {
     </div>`;
   }
 
-  /**
-   * The Now view, split into labelled sections: the working set (overdue then
-   * no-date, no header) followed by "Coming up" (tasks due today). Empty
-   * sections and their headers are omitted, so with no due-today tasks this is
-   * the same flat list Now shows without the feature. Every card keeps its full
-   * swipe/complete/snooze/select wiring, and the cards render in the exact order
-   * {@link visibleTasks} walks for keyboard navigation.
-   */
-  private renderNowSections() {
-    return html`
-      <div class="list">
-        ${nowSections(this.grouped).map(
-          (s) => html`
-            ${s.label !== null
-              ? html`<h2 class="grouphead">${s.label}</h2>`
-              : nothing}
-            ${repeat(
-              s.tasks,
-              (t) => t.id,
-              (t) =>
-                html`<task-card
-                  .task=${t}
-                  .somedayListId=${this.somedayListId}
-                  ?selected=${t.id === this.selectedTaskId}
-                ></task-card>`,
-            )}
-          `,
-        )}
-      </div>
-    `;
-  }
-
   /** The two-section result list shown while a search query is active. */
   private renderSearchResults(sections: SearchSections) {
     return html`
@@ -783,8 +747,6 @@ export class TaskListView extends LitElement {
                       `,
                     )}
                   </div>`
-                : this.view === 'now'
-                ? this.renderNowSections()
                 : html`<div class="list">
                     ${repeat(
                       tasks,

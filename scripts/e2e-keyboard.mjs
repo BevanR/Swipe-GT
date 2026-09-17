@@ -45,34 +45,21 @@ const LISTS = [
   { id: 'SOMEDAY', title: 'Someday' },
 ];
 
-// Today's LOCAL calendar date as 'YYYY-MM-DD' — matches how the app derives
-// "today" from `new Date()` in the browser on this same machine. Used to seed a
-// due-today task so the Now view's "Coming up" section renders.
-function localTodayStr() {
-  const d = new Date();
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-const TODAY_STR = localTodayStr();
-
 // Dates chosen so membership is deterministic regardless of the machine clock:
 // far-past dues are always overdue (→ Now); far-future is always Scheduled;
-// dateless-in-Someday is always Someday; the "Delta" task is due TODAY so it
-// lands in the Now view's "Coming up" section.
+// dateless-in-Someday is always Someday.
 const TASKS_BY_LIST = {
   '@default': [
     mkTask('task-alpha', 'Alpha task', '2020-01-01T00:00:00.000Z', '00000000000000000000'),
     mkTask('task-bravo', 'Bravo task', '2020-01-02T00:00:00.000Z', '00000000000000000001'),
     mkTask('task-charlie', 'Charlie task', undefined, '00000000000000000002'),
     mkTask('task-future', 'Future task', '2099-12-31T00:00:00.000Z', '00000000000000000003'),
-    mkTask('task-delta', 'Delta task', `${TODAY_STR}T00:00:00.000Z`, '00000000000000000004'),
   ],
   SOMEDAY: [mkTask('task-someday', 'Someday task', undefined, '00000000000000000000')],
 };
 
-// The order the Now view renders: the working set (overdue in position order,
-// then no-date), then the "Coming up" section (due today).
-const NOW_TITLES = ['Alpha task', 'Bravo task', 'Charlie task', 'Delta task'];
+// The order the Now view renders (overdue in position order, then no-date).
+const NOW_TITLES = ['Alpha task', 'Bravo task', 'Charlie task'];
 
 function mkTask(id, title, due, position) {
   return {
@@ -157,10 +144,6 @@ function pageProbe() {
     active = active.shadowRoot.activeElement;
   }
 
-  const groupHeads = all
-    .filter((el) => el.classList && el.classList.contains('grouphead'))
-    .map((el) => el.textContent.trim());
-
   const helpOpen = all.some(
     (el) => el.getAttribute && el.getAttribute('aria-label') === 'Keyboard shortcuts',
   );
@@ -179,7 +162,6 @@ function pageProbe() {
     options,
     selectedOption: (options.find((o) => o.selected) || {}).label || null,
     selectedOptionIndex: options.findIndex((o) => o.selected),
-    groupHeads,
     helpOpen,
     undoVisible,
     activeTag: active ? active.tagName.toLowerCase() : null,
@@ -362,32 +344,6 @@ async function main() {
     check('ArrowUp moves back to the first card', st.selectedTitle === 'Alpha task', st.selectedTitle);
     const onList = (s) => s.listOpen && !s.editOpen && !s.snoozeOpen && (s.hash === '' || s.hash === '#/');
     check('no navigation leaked (still on the list)', onList(st), st.hash);
-
-    // The Now view splits due-today tasks into a "Coming up" section, and
-    // ArrowDown/ArrowUp must traverse ACROSS the section break seamlessly.
-    check(
-      'Now view shows the "Coming up" section header (due-today tasks present)',
-      st.groupHeads.includes('Coming up'),
-      JSON.stringify(st.groupHeads),
-    );
-    // We're on Alpha (index 0). Step down through the working set into "Coming up".
-    await press('ArrowDown'); // Bravo
-    await press('ArrowDown'); // Charlie (last of the working set)
-    st = await probe();
-    check('ArrowDown reaches the last working-set card', st.selectedTitle === 'Charlie task', st.selectedTitle);
-    await press('ArrowDown'); // crosses the section break into "Coming up"
-    st = await probe();
-    check('ArrowDown crosses into the "Coming up" section', st.selectedTitle === 'Delta task', st.selectedTitle);
-    check('exactly one card selected across the section break', st.cards.filter((c) => c.selected).length === 1);
-    await press('ArrowUp'); // crosses back up into the working set
-    st = await probe();
-    check('ArrowUp crosses back out of the "Coming up" section', st.selectedTitle === 'Charlie task', st.selectedTitle);
-    check('still on the list after cross-section traversal', onList(st), st.hash);
-    // Return to the top for the subsequent assertions.
-    await press('ArrowUp'); // Bravo
-    await press('ArrowUp'); // Alpha
-    st = await probe();
-    check('ArrowUp returns to the first card after traversal', st.selectedTitle === 'Alpha task', st.selectedTitle);
 
     // 1 / 2 / 3 switch views.
     await press('2');
