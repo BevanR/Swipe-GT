@@ -16,8 +16,8 @@ This doc is the durable handoff for humans and future agents. Keep it current.
 | `npm run test` | Vitest unit tests (jsdom + MSW) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run smoke:build` | Build, then load the built site in headless Chromium and fail on any console error / uncaught exception / non-render |
-| `npm run test:e2e` | Playwright keyboard-nav e2e against a running build (`scripts/e2e-keyboard.mjs`) |
-| `npm run test:e2e:build` | Build, then run the Playwright keyboard-nav e2e (the one-shot build+run used by the gate) |
+| `npm run test:e2e` | Playwright e2e against a running build: keyboard-nav (`scripts/e2e-keyboard.mjs`) **and** offline-first (`scripts/e2e-offline.mjs`) |
+| `npm run test:e2e:build` | Build, then run both Playwright e2e suites (the one-shot build+run used by the gate) |
 | `npm run icons` | Regenerate PWA icons from `public/icons/icon.svg` (sharp) |
 
 ## Deploy
@@ -77,6 +77,10 @@ scripts/
   smoke.mjs            headless-Chromium smoke check (also the CI gate)
   e2e-keyboard.mjs     Playwright keyboard-nav e2e: boots the built app logged-in
                        with mocked Google Tasks data, drives real key presses
+  e2e-offline.mjs      Playwright offline-first e2e: offline cold-load renders the
+                       cached list + Offline indicator (even with an expired token),
+                       offline mutations enqueue + show the syncing indicator, and
+                       reconnect drains the queue + clears the indicator
   generate-icons.mjs   SVG -> PNG icons via sharp
 ```
 
@@ -102,6 +106,9 @@ scripts/
 - Swipe right = complete (green + check, optimistic). Leading circle also completes.
 - Swipe left = **Postpone** — a full-viewport route (`#/snooze/<listId>/<taskId>`, `snooze-screen.ts`), not a dialog (Tomorrow / Later this week / This weekend / Next week / Next month; **Today** added for overdue items). Relative options show the resolved date (e.g. "Tomorrow · Wed 17 Sep"). Right-side star toggles.
 - Optimistic UI with offline enqueue + rollback; drain on reconnect.
+- **Save feedback**: tapping Add / Save enters a pending state — the action is replaced by a spinner and can't be re-submitted (double-tap/Enter guarded). Edit stays optimistic (list updates + closes instantly); its confirmation shows as the per-item syncing indicator on the list.
+- **Per-item syncing indicator**: a task whose mutation is queued offline or in-flight to Google shows a small muted spinner (where the snooze button sits, `aria-busy`), cleared once the mutation confirms. Driven by `AppState.pendingTaskIds` (union of in-flight + queued mutation task ids).
+- **Offline-first auth + sync**: offline the app presumes the cached credential valid and renders from the IndexedDB snapshot with a header **Offline** chip — it never bounces to Connect for being offline (even with an expired token). Add/complete/snooze while offline apply optimistically and enqueue; on reconnect the queue drains oldest-first, then a refresh reconciles and clears the indicator. Re-auth is surfaced ONLY on a genuine auth failure (silent-renew failure while online, or a 401/403), never on a plain network error. A first-ever load with no cached credential still shows Connect.
 - Two themes (inbox / tasks), PWA installable, offline app shell.
 
 ## Backlog (not yet built)
@@ -133,4 +140,5 @@ Open decisions the user may revisit: "No date" on a Someday-list task keeps it i
 - Lit components can't be DOM-mounted in the current Vitest setup (decorator/transform limitation); component behavior is covered via the controller data-flow tests + the headless smoke check instead.
 - The smoke check exercises the logged-out connect path only (no real Google login in CI). Real-task rendering is confirmed by manual use with a test-user account.
 - **Playwright keyboard-nav e2e** (`scripts/e2e-keyboard.mjs`, `npm run test:e2e` / `test:e2e:build`): boots the built app in a **logged-in** state with **mocked Google Tasks data** — it seeds the persisted OAuth record in IndexedDB so `AuthClient` returns a token without GIS, intercepts `https://tasks.googleapis.com/*` via `page.route` with fixtures, and blocks the service worker for determinism — then drives real key presses. It asserts selection movement; routing (`e`/`Enter`/`r` → edit, `p`/`d`/`s` → Postpone route, `c`/`x` → complete, `1`/`2`/`3` → views, `?` → help); Escape-on-edit → list; title-focus-on-edit; and the Postpone-route arrows/Enter don't leak to the edit screen.
-- This closed the prior gap where keyboard behavior was never exercised (Lit can't mount in vitest/jsdom; smoke only covered the logged-out path). **The gate is now tsc + vitest (306 tests) + `smoke:build` + `test:e2e:build`.**
+- **Playwright offline-first e2e** (`scripts/e2e-offline.mjs`): boots the built app logged-in (same seeding as the keyboard harness), then simulates the real offline condition — overriding `navigator.onLine` and aborting every `tasks.googleapis.com` request from the Node side (the app shell + SW stay served from localhost) — to assert (a) an offline COLD LOAD with an **expired** token renders the cached list + Offline indicator instead of the Connect screen (the reported bug; verified to fail on the pre-fix code), (b) an offline snooze enqueues and its card shows the syncing indicator, and (c) reconnect drains the queue and clears the indicator. Expected offline network-abort console noise is filtered; every other console error is still a hard failure.
+- This closed the prior gap where keyboard behavior was never exercised (Lit can't mount in vitest/jsdom; smoke only covered the logged-out path). **The gate is now tsc + vitest (319 tests) + `smoke:build` + `test:e2e:build` (keyboard + offline e2e).**
