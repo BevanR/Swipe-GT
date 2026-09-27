@@ -236,6 +236,28 @@ export class TaskCard extends LitElement {
       height: 22px;
       fill: currentColor;
     }
+    /* Per-item "syncing" indicator: a small muted spinner shown where the snooze
+       button sits when this task's mutation is queued offline or in-flight to
+       Google. Purely informational; it doesn't replace the snooze control. */
+    .syncing {
+      flex: none;
+      width: 40px;
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--app-on-surface-muted);
+    }
+    .syncing svg {
+      width: 20px;
+      height: 20px;
+      animation: syncspin 0.9s linear infinite;
+    }
+    @keyframes syncspin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
     .body {
       min-width: 0;
       flex: 1;
@@ -291,6 +313,11 @@ export class TaskCard extends LitElement {
         animation: none;
         display: none;
       }
+      /* Stop the syncing spinner from rotating; it stays visible as a static ring
+         so the "waiting to sync" state is still conveyed without motion. */
+      .syncing svg {
+        animation: none;
+      }
     }
   `;
 
@@ -308,6 +335,12 @@ export class TaskCard extends LitElement {
    * so the `:host([selected])` highlight applies; toggled by the list view.
    */
   @property({ type: Boolean, reflect: true }) selected = false;
+  /**
+   * True when this task has a mutation queued offline or in-flight to Google.
+   * Reflected to an attribute (so the list can query it and tests can assert it),
+   * and mirrored to `aria-busy` on the host for assistive tech.
+   */
+  @property({ type: Boolean, reflect: true }) syncing = false;
 
   @state() private offset = 0;
   @state() private animating = false;
@@ -560,6 +593,11 @@ export class TaskCard extends LitElement {
       this.animating = false;
       this.completing = false;
     }
+    if (changed.has('syncing')) {
+      // Mirror the pending state to aria-busy so assistive tech announces it.
+      if (this.syncing) this.setAttribute('aria-busy', 'true');
+      else this.removeAttribute('aria-busy');
+    }
   }
 
   private slideOut(dir: 'left' | 'right'): void {
@@ -687,6 +725,24 @@ export class TaskCard extends LitElement {
           </div>
           ${this.task?.notes ? html`<div class="notes">${this.task.notes}</div>` : ''}
         </div>
+        ${this.syncing
+          ? html`<span
+              class="syncing"
+              role="status"
+              aria-label="Waiting to sync"
+              title="Waiting to sync"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  d="M21 12a9 9 0 1 1-2.64-6.36"
+                />
+              </svg>
+            </span>`
+          : ''}
         <button
           class="snoozebtn"
           type="button"

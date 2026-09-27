@@ -92,6 +92,27 @@ export class TaskListView extends LitElement {
       font-size: 1.1rem;
       font-weight: 600;
     }
+    /* Compact "Offline" chip in the header, shown while offline so the user knows
+       they're seeing cached data and changes are queued. Unobtrusive but clear. */
+    .offline-chip {
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      background: color-mix(in srgb, var(--app-snooze) 30%, var(--app-surface));
+      color: var(--app-on-surface);
+      border: 1px solid var(--app-border);
+    }
+    .offline-chip svg {
+      width: 14px;
+      height: 14px;
+      fill: currentColor;
+    }
     .iconbtn {
       appearance: none;
       border: none;
@@ -325,6 +346,8 @@ export class TaskListView extends LitElement {
   /** The designated Someday list id (or null); threaded down to each card. */
   @property({ attribute: false }) somedayListId: string | null = null;
   @property({ type: Boolean }) offline = false;
+  /** Ids of tasks with a queued/in-flight mutation; drives the per-card spinner. */
+  @property({ attribute: false }) pendingIds: string[] = [];
   @property({ type: Boolean }) fromCache = false;
   @property({ type: Boolean }) loading = false;
   @property({ type: Number }) fetchedAt: number | null = null;
@@ -544,6 +567,11 @@ export class TaskListView extends LitElement {
     return pick;
   }
 
+  /** True when this task has a queued/in-flight mutation (shows the card spinner). */
+  private isPending(id: string): boolean {
+    return this.pendingIds.includes(id);
+  }
+
   private cacheLabel(): string {
     if (!this.fetchedAt) return '';
     const when = new Date(this.fetchedAt).toLocaleString();
@@ -591,6 +619,7 @@ export class TaskListView extends LitElement {
                   .task=${t}
                   .somedayListId=${this.somedayListId}
                   ?selected=${t.id === this.selectedTaskId}
+                  ?syncing=${this.isPending(t.id)}
                 ></task-card>`,
             )}
         ${sections.other.length > 0
@@ -604,6 +633,7 @@ export class TaskListView extends LitElement {
                     .task=${t}
                     .somedayListId=${this.somedayListId}
                     ?selected=${t.id === this.selectedTaskId}
+                    ?syncing=${this.isPending(t.id)}
                   ></task-card>`,
               )}
             `
@@ -624,6 +654,16 @@ export class TaskListView extends LitElement {
         <header>
           <div class="titlebar">
             <h1>Swipe GT</h1>
+            ${this.offline
+              ? html`<span class="offline-chip" role="status" aria-label="Offline">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M24 8.98A16.88 16.88 0 0 0 12 4c-1.42 0-2.8.18-4.12.5l2.2 2.2c.63-.08 1.27-.13 1.92-.13 3.95 0 7.7 1.44 10.61 4.06L24 8.98zM2.28 3 1 4.27l2.05 2.06A16.9 16.9 0 0 0 0 8.98l1.99 1.66a14.1 14.1 0 0 1 3.18-2.06l2.29 2.28A11.1 11.1 0 0 0 4 12.62l1.99 1.65a8.5 8.5 0 0 1 3.24-1.72l2.72 2.72a5.98 5.98 0 0 0-2.95 1.61L12 21l2.78-3.47L19.73 22.5 21 21.23 2.28 3z"
+                    />
+                  </svg>
+                  Offline
+                </span>`
+              : nothing}
             <button
               class="iconbtn"
               aria-label="Search"
@@ -742,6 +782,7 @@ export class TaskListView extends LitElement {
                               .somedayListId=${this.somedayListId}
                               .dueDisplay=${scheduledDueDisplay(g.key, t.due)}
                               ?selected=${t.id === this.selectedTaskId}
+                              ?syncing=${this.isPending(t.id)}
                             ></task-card>`,
                         )}
                       `,
@@ -756,6 +797,7 @@ export class TaskListView extends LitElement {
                           .task=${t}
                           .somedayListId=${this.somedayListId}
                           ?selected=${t.id === this.selectedTaskId}
+                          ?syncing=${this.isPending(t.id)}
                         ></task-card>`,
                     )}
                   </div>`}

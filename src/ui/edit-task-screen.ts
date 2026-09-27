@@ -80,6 +80,28 @@ export class EditTaskScreen extends LitElement {
       --md-text-button-label-text-weight: 700;
       flex: none;
     }
+    /* Saving spinner shown in place of the Save button the instant it's tapped, so
+       the tap registers and the control can't be tapped twice. Sized to the tap
+       target so the header doesn't reflow. */
+    .header-spinner {
+      flex: none;
+      width: 40px;
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--app-accent);
+    }
+    .header-spinner svg {
+      width: 24px;
+      height: 24px;
+      animation: header-spin 0.9s linear infinite;
+    }
+    @keyframes header-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
     .iconbtn {
       appearance: none;
       border: none;
@@ -167,6 +189,9 @@ export class EditTaskScreen extends LitElement {
     }
     @media (prefers-reduced-motion: reduce) {
       :host {
+        animation: none;
+      }
+      .header-spinner svg {
         animation: none;
       }
     }
@@ -314,6 +339,11 @@ export class EditTaskScreen extends LitElement {
    */
   private save(): void {
     if (!this.canSave() || !this.onSave) return;
+    // Guard against a double-submit (repeated tap / Enter): mark saving so
+    // canSave() is false on re-entry. The controller's updateTask is optimistic
+    // (the list already reflects the edit and shows a per-item syncing spinner
+    // until it confirms), so we navigate straight back rather than blocking here.
+    this.submitting = true;
     void this.onSave(this.buildChanges()).catch(() => {});
     navigate('list');
   }
@@ -361,15 +391,32 @@ export class EditTaskScreen extends LitElement {
             </svg>
           </button>
           <h1>Edit task</h1>
-          <md-text-button
-            class="header-action"
-            aria-label="Save changes"
-            title="Save"
-            ?disabled=${!this.canSave()}
-            @click=${() => this.save()}
-          >
-            Save
-          </md-text-button>
+          ${this.submitting
+            ? html`<span
+                class="header-spinner"
+                role="status"
+                aria-label="Saving changes"
+                title="Saving…"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    d="M21 12a9 9 0 1 1-2.64-6.36"
+                  />
+                </svg>
+              </span>`
+            : html`<md-text-button
+                class="header-action"
+                aria-label="Save changes"
+                title="Save"
+                ?disabled=${!this.canSave()}
+                @click=${() => this.save()}
+              >
+                Save
+              </md-text-button>`}
         </header>
 
         <form id="edit-task-form" @submit=${(e: Event) => this.onFormSubmit(e)}>

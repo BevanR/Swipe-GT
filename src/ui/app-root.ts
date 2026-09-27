@@ -432,6 +432,7 @@ export class AppRoot extends LitElement {
           ?offline=${s.offline}
           ?fromCache=${s.fromCache}
           ?loading=${s.loading}
+          .pendingIds=${s.pendingTaskIds}
           .fetchedAt=${s.fetchedAt}
           .lists=${s.lists}
         ></task-list-view>`;

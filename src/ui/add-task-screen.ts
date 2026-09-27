@@ -89,6 +89,28 @@ export class AddTaskScreen extends LitElement {
       --md-text-button-label-text-weight: 700;
       flex: none;
     }
+    /* Saving spinner shown in place of the Add button while the insert is in
+       flight, so the tap is obviously registered and the control can't be tapped
+       again. Sized to the button's tap target so the header doesn't reflow. */
+    .header-spinner {
+      flex: none;
+      width: 40px;
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--app-accent);
+    }
+    .header-spinner svg {
+      width: 24px;
+      height: 24px;
+      animation: header-spin 0.9s linear infinite;
+    }
+    @keyframes header-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
     .iconbtn {
       appearance: none;
       border: none;
@@ -177,6 +199,9 @@ export class AddTaskScreen extends LitElement {
     }
     @media (prefers-reduced-motion: reduce) {
       :host {
+        animation: none;
+      }
+      .header-spinner svg {
         animation: none;
       }
     }
@@ -342,7 +367,11 @@ export class AddTaskScreen extends LitElement {
 
   render() {
     return html`
-      <div class="wrap" @keydown=${(e: KeyboardEvent) => this.onKeydown(e)}>
+      <div
+        class="wrap"
+        aria-busy=${this.submitting ? 'true' : 'false'}
+        @keydown=${(e: KeyboardEvent) => this.onKeydown(e)}
+      >
         <header>
           <button class="iconbtn" aria-label="Back" @click=${() => this.cancel()}>
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -350,14 +379,31 @@ export class AddTaskScreen extends LitElement {
             </svg>
           </button>
           <h1>Add task</h1>
-          <md-text-button
-            class="header-action"
-            aria-label="Add task"
-            ?disabled=${!this.canSubmit()}
-            @click=${() => void this.submit()}
-          >
-            Add
-          </md-text-button>
+          ${this.submitting
+            ? html`<span
+                class="header-spinner"
+                role="status"
+                aria-label="Adding task"
+                title="Adding…"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    d="M21 12a9 9 0 1 1-2.64-6.36"
+                  />
+                </svg>
+              </span>`
+            : html`<md-text-button
+                class="header-action"
+                aria-label="Add task"
+                ?disabled=${!this.canSubmit()}
+                @click=${() => void this.submit()}
+              >
+                Add
+              </md-text-button>`}
         </header>
 
         <form id="add-task-form" @submit=${(e: Event) => this.onFormSubmit(e)}>
