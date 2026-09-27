@@ -1,6 +1,12 @@
 import type { AuthState } from '../types';
 import { GOOGLE_CLIENT_ID, OAUTH_SCOPE } from '../config';
 import { getConfig, setConfig } from '../storage/db';
+import { decideTokenStrategy } from './tokenStrategy';
+
+/** True unless the browser explicitly reports it is offline. */
+function isOnline(): boolean {
+  return typeof navigator === 'undefined' || navigator.onLine !== false;
+}
 
 /**
  * Thrown when a silent access-token renewal fails. The UI should catch this
@@ -132,12 +138,22 @@ export class AuthClient {
    */
   async getValidAccessToken(): Promise<string> {
     const { auth } = await getConfig();
-    if (auth && auth.accessTokenExpiry - Date.now() > 60_000) {
-      return auth.accessToken;
-    }
-    if (!auth) {
+    const strategy = decideTokenStrategy({
+      hasCachedAuth: auth != null,
+      tokenFresh: auth != null && auth.accessTokenExpiry - Date.now() > 60_000,
+      online: isOnline(),
+    });
+    if (strategy === 'reconnect') {
       throw new SilentRenewFailedError();
     }
+    if (strategy === 'use-cached') {
+      // Fresh token, OR a stale token while offline: presume it is still valid
+      // and reuse it rather than attempting a silent renew that cannot succeed
+      // offline. If offline the ensuing fetch fails as a NETWORK error, which the
+      // controller handles by rendering cached data — never a forced sign-out.
+      return auth!.accessToken;
+    }
+    // strategy === 'silent-renew': online with a stale token.
     try {
       await this.ensureClient();
       const response = await this.requestToken({ prompt: '' });

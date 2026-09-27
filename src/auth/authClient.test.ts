@@ -36,6 +36,10 @@ function installFakeGis() {
   (globalThis as unknown as { google: unknown }).google = fake;
 }
 
+function setOnline(online: boolean): void {
+  Object.defineProperty(navigator, 'onLine', { value: online, configurable: true });
+}
+
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory();
   _resetDbForTests();
@@ -44,6 +48,7 @@ beforeEach(() => {
   behavior = 'success';
   response = { access_token: 'fresh-token', expires_in: '3600' };
   installFakeGis();
+  setOnline(true);
 });
 
 describe('AuthClient.connect', () => {
@@ -100,6 +105,28 @@ describe('AuthClient.getValidAccessToken', () => {
       SilentRenewFailedError,
     );
     expect(requestAccessToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('OFFLINE with a stale token returns the cached token WITHOUT a renewal round-trip', async () => {
+    // The core offline-first fix: offline, a stale token is presumed valid and
+    // reused, so no doomed silent-renew round-trip is attempted (which used to
+    // throw SilentRenewFailedError and bounce the app to Connect).
+    await setConfig({
+      auth: { accessToken: 'stale-but-usable', accessTokenExpiry: Date.now() - 1000 },
+    });
+    setOnline(false);
+
+    const token = await new AuthClient().getValidAccessToken();
+    expect(token).toBe('stale-but-usable');
+    expect(requestAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('OFFLINE with no cached credential still throws (logged-out case is not presumed valid)', async () => {
+    setOnline(false);
+    await expect(new AuthClient().getValidAccessToken()).rejects.toBeInstanceOf(
+      SilentRenewFailedError,
+    );
+    expect(requestAccessToken).not.toHaveBeenCalled();
   });
 });
 

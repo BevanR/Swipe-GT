@@ -29,6 +29,11 @@ export interface AppState {
   fetchedAt: number | null;
   /** True while a (re)fetch is in flight. */
   loading: boolean;
+  /**
+   * Ids of tasks whose mutation is queued offline or in-flight to Google, so the
+   * list can show a per-item "syncing" indicator. Cleared as mutations confirm.
+   */
+  pendingTaskIds: string[];
   /** Transient snackbar message, or null. */
   toast: string | null;
   /** True after connecting fails, so the connect screen can show a hint. */
@@ -54,6 +59,7 @@ export function initialState(theme: ThemeName): AppState {
     offline: typeof navigator !== 'undefined' ? !navigator.onLine : false,
     fetchedAt: null,
     loading: false,
+    pendingTaskIds: [],
     toast: null,
     connectError: false,
   };

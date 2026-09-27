@@ -2,7 +2,15 @@ import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppController, type ApiLike, type AuthLike } from './controller';
-import { _resetDbForTests, getConfig, listMutations, setConfig } from '../storage/db';
+import { SilentRenewFailedError } from '../auth/authClient';
+import {
+  _resetDbForTests,
+  enqueueMutation,
+  getConfig,
+  listMutations,
+  setConfig,
+  setSnapshot,
+} from '../storage/db';
 import type { Task } from '../types';
 
 function localDate(offsetDays: number): string {
@@ -862,6 +870,146 @@ describe('AppController.moveToSomeday', () => {
 
     expect(ctrl.state.someday.map((x) => x.id)).toEqual(['t']);
     expect(ctrl.state.toast).toBeNull();
+  });
+});
+
+describe('AppController offline-first load', () => {
+  it('renders the cached snapshot with the offline indicator when a cold load fails offline with an EXPIRED token', async () => {
+    // Regression for the reported bug: offline, an expired token used to trigger a
+    // silent-renew round-trip that threw SilentRenewFailedError and bounced the
+    // app to Connect — even though a valid snapshot + cached credential existed.
+    await setConfig({ auth: { accessToken: 'stale', accessTokenExpiry: Date.now() - 1000 } });
+    await setSnapshot({
+      fetchedAt: 111,
+      tasks: [task('cached', null)],
+      lists: [{ id: 'l1', title: 'My Tasks' }],
+    });
+    // Model the real AuthClient offline behaviour: with the fix it presumes the
+    // token valid, so the ensuing fetch fails as a plain NETWORK error.
+    const api = makeApi([]);
+    api.listTaskLists = vi.fn(async () => {
+      throw new Error('Failed to fetch');
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    setOnline(false);
+
+    await ctrl.boot();
+
+    expect(ctrl.state.screen).toBe('list');
+    expect(ctrl.state.offline).toBe(true);
+    expect(ctrl.state.fromCache).toBe(true);
+    expect(ctrl.state.fetchedAt).toBe(111);
+    expect(ctrl.state.grouped.noDate.map((t) => t.id)).toEqual(['cached']);
+  });
+
+  it('does NOT bounce to connect even if a SilentRenewFailedError surfaces while offline', async () => {
+    await setConfig({ auth: { accessToken: 'stale', accessTokenExpiry: Date.now() - 1000 } });
+    await setSnapshot({
+      fetchedAt: 222,
+      tasks: [task('cached', null)],
+      lists: [{ id: 'l1', title: 'My Tasks' }],
+    });
+    const api = makeApi([]);
+    api.listTaskLists = vi.fn(async () => {
+      throw new SilentRenewFailedError();
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    setOnline(false);
+
+    await ctrl.boot();
+
+    expect(ctrl.state.screen).toBe('list');
+    expect(ctrl.state.offline).toBe(true);
+    expect(ctrl.state.grouped.noDate.map((t) => t.id)).toEqual(['cached']);
+  });
+
+  it('still shows the connect screen on a first-ever load with no cached credential', async () => {
+    const auth = makeAuth();
+    auth.isConnected = vi.fn(async () => false);
+    const ctrl = new AppController({ auth, api: makeApi([]) });
+    setOnline(false);
+
+    await ctrl.boot();
+
+    expect(ctrl.state.screen).toBe('connect');
+  });
+
+  it('bounces to connect on a GENUINE (online) silent-renew failure', async () => {
+    const api = makeApi([]);
+    api.listTaskLists = vi.fn(async () => {
+      throw new SilentRenewFailedError();
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    setOnline(true);
+
+    await ctrl.load();
+
+    expect(ctrl.state.screen).toBe('connect');
+  });
+});
+
+describe('AppController per-item syncing indicator (pendingTaskIds)', () => {
+  it('marks a task pending when its mutation is queued offline, and shows it on cold load', async () => {
+    const api = makeApi([task('a', localDate(-1))]);
+    api.patchDue = vi.fn(async () => {
+      throw new Error('offline fetch failed');
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    await ctrl.load();
+    setOnline(false);
+    const a = ctrl.state.grouped.overdue.find((t) => t.id === 'a')!;
+
+    await ctrl.snoozeTask(a, localDate(3));
+
+    // Queued offline → the optimistic change is kept AND the task is flagged pending.
+    expect(await listMutations()).toHaveLength(1);
+    expect(ctrl.state.pendingTaskIds).toContain('a');
+    expect(ctrl.state.scheduled.map((t) => t.id)).toEqual(['a']);
+  });
+
+  it('drains a queued mutation and clears its pending flag when booting back online', async () => {
+    // A previous offline session left a queued snooze. Booting online drains it.
+    const api = makeApi([task('a', localDate(-1))]);
+    await enqueueMutation({
+      id: 'm1',
+      type: 'snooze',
+      taskId: 'a',
+      taskListId: 'l1',
+      due: localDate(3),
+      createdAt: 1,
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    setOnline(true);
+
+    await ctrl.boot();
+
+    expect(api.patchDue).toHaveBeenCalledWith('l1', 'a', localDate(3));
+    expect(await listMutations()).toHaveLength(0);
+    expect(ctrl.state.pendingTaskIds).not.toContain('a');
+    expect(ctrl.state.offline).toBe(false);
+  });
+
+  it('routes to connect on a genuine auth error (401) while draining on reconnect', async () => {
+    const api = makeApi([task('a', localDate(-1))]);
+    api.patchDue = vi.fn(async () => {
+      throw new Error('Google Tasks API 401 Unauthorized: bad creds');
+    });
+    await enqueueMutation({
+      id: 'm1',
+      type: 'snooze',
+      taskId: 'a',
+      taskListId: 'l1',
+      due: localDate(3),
+      createdAt: 1,
+    });
+    const ctrl = new AppController({ auth: makeAuth(), api });
+    setOnline(true);
+
+    await ctrl.boot();
+
+    expect(ctrl.state.screen).toBe('connect');
+    // A genuine auth failure leaves the mutation queued for after re-auth.
+    expect(await listMutations()).toHaveLength(1);
   });
 });
 

@@ -3,6 +3,7 @@ import { TasksApi } from '../api/tasksApi';
 import {
   getConfig,
   getSnapshot,
+  listMutations,
   setConfig,
   setSnapshot,
 } from '../storage/db';
@@ -77,6 +78,19 @@ function isRecurringMoveError(err: unknown): boolean {
 }
 
 /**
+ * Heuristic: is this a GENUINE authentication failure (the token was rejected as
+ * unauthorized), as opposed to a mere network error from being offline? The REST
+ * client throws an Error whose message includes the HTTP status. Only a real 401
+ * (or 403) should trigger re-auth; a network failure while offline must NOT sign
+ * the user out.
+ */
+function isAuthError(err: unknown): boolean {
+  if (err instanceof SilentRenewFailedError) return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /\b(401|403)\b/.test(msg) || /unauthor/i.test(msg);
+}
+
+/**
  * Owns all app data flow: auth, fetching, filtering, optimistic mutations, the
  * offline queue, and the refresh triggers. Emits a 'change' event whenever
  * {@link state} changes; the UI subscribes and re-renders.
@@ -88,6 +102,10 @@ export class AppController extends EventTarget {
   /** True once the browser-event listeners are wired (idempotent boot). */
   private listenersWired = false;
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Task ids with a mutation currently in-flight to Google (not yet confirmed). */
+  private readonly inFlight = new Set<string>();
+  /** Task ids with a mutation persisted in the offline queue (awaiting drain). */
+  private queuedIds = new Set<string>();
 
   constructor(opts?: { auth?: AuthLike; api?: ApiLike; theme?: ThemeName }) {
     super();
@@ -122,6 +140,12 @@ export class AppController extends EventTarget {
 
     if (await this.auth.isConnected()) {
       await this.load();
+      // If a previous offline session left queued mutations and we're back
+      // online, drain them now (then refresh) so a cold online boot syncs too.
+      const online = typeof navigator === 'undefined' || navigator.onLine;
+      if (online && this.queuedIds.size > 0) {
+        await this.handleOnline();
+      }
     } else {
       this.patch({ screen: 'connect', connectError: false });
     }
@@ -143,6 +167,8 @@ export class AppController extends EventTarget {
   /** Disconnect: clear auth and return to the connect screen. */
   async disconnect(): Promise<void> {
     await setConfig({ auth: null });
+    this.inFlight.clear();
+    this.queuedIds.clear();
     this.patch({
       screen: 'connect',
       grouped: EMPTY_GROUPS,
@@ -152,6 +178,7 @@ export class AppController extends EventTarget {
       lists: [],
       fetchedAt: null,
       fromCache: false,
+      pendingTaskIds: [],
       connectError: false,
     });
   }
@@ -182,6 +209,7 @@ export class AppController extends EventTarget {
         loading: false,
       });
       this.setTasks(tasks);
+      await this.reloadQueuedIds();
       // Only jump to the list screen from loading/connect; keep settings open
       // if the user is there (a settings change re-runs load in the background).
       if (this._state.screen === 'loading' || this._state.screen === 'connect') {
@@ -192,32 +220,70 @@ export class AppController extends EventTarget {
     }
   }
 
+  /**
+   * Publish {@link AppState.pendingTaskIds} = the union of in-flight and queued
+   * task ids, so the list can show a per-item "syncing" indicator on tasks that
+   * are awaiting confirmation from Google (in-flight) or waiting to sync (queued).
+   * Synchronous so an in-flight mark shows the instant a mutation starts.
+   */
+  private syncPending(): void {
+    const ids = new Set<string>(this.inFlight);
+    for (const id of this.queuedIds) ids.add(id);
+    this.patch({ pendingTaskIds: [...ids] });
+  }
+
+  /** Refresh the cached queued-task-id set from the persisted queue, then publish. */
+  private async reloadQueuedIds(): Promise<void> {
+    this.queuedIds = new Set((await listMutations()).map((m) => m.taskId));
+    this.syncPending();
+  }
+
+  /** Mark a task's mutation in-flight (or clear it) and publish the pending set. */
+  private setInFlight(taskId: string, active: boolean): void {
+    if (active) this.inFlight.add(taskId);
+    else this.inFlight.delete(taskId);
+    this.syncPending();
+  }
+
   private async handleLoadError(err: unknown): Promise<void> {
-    if (err instanceof SilentRenewFailedError) {
-      // Silent renew failed — fall back to interactive re-auth, keeping any
-      // queued offline mutations intact.
-      this.patch({ screen: 'connect', connectError: false, loading: false });
-      return;
-    }
     const offline = typeof navigator !== 'undefined' && !navigator.onLine;
     const snapshot = await getSnapshot();
-    if (offline && snapshot) {
+
+    // Offline-first: being offline is NOT a sign-out. We reached load() only with
+    // a cached credential (boot gates on isConnected), so when offline we presume
+    // that credential is still valid and render the cached snapshot (or an empty
+    // list) with the Offline indicator — never bouncing to Connect. This holds
+    // even for a SilentRenewFailedError, which offline just means "couldn't reach
+    // Google to renew", not "the session really expired".
+    if (offline) {
       this.patch({
         screen: this._state.screen === 'connect' ? 'list' : this._state.screen,
-        lists: snapshot.lists,
-        fetchedAt: snapshot.fetchedAt,
-        fromCache: true,
+        ...(snapshot ? { lists: snapshot.lists, fetchedAt: snapshot.fetchedAt } : {}),
+        fromCache: snapshot != null,
         offline: true,
         loading: false,
       });
-      this.setTasks(snapshot.tasks);
+      if (snapshot) this.setTasks(snapshot.tasks);
       if (this._state.screen === 'loading') this.patch({ screen: 'list' });
+      await this.reloadQueuedIds();
       return;
     }
+
+    if (err instanceof SilentRenewFailedError) {
+      // GENUINELY online but the silent renew failed — the session really is
+      // expired, so fall back to interactive re-auth, keeping any queued offline
+      // mutations intact.
+      this.patch({ screen: 'connect', connectError: false, loading: false });
+      return;
+    }
+
+    // Online, transient failure: don't overwrite current (possibly optimistic)
+    // state with the stale snapshot; just toast and keep the user where they are.
     this.patch({ loading: false });
     this.showToast('Could not load tasks. Pull to refresh to retry.');
     if (this._state.screen === 'loading') {
-      // Nothing to show and no cache — offer reconnect as a last resort.
+      // Nothing to show and no cache — land on the (empty) list rather than a
+      // dead loading spinner.
       this.patch({ screen: 'list' });
     }
   }
@@ -231,6 +297,7 @@ export class AppController extends EventTarget {
    */
   async completeTask(task: Task): Promise<void> {
     const prev = this.removeTaskLocal(task.id);
+    this.setInFlight(task.id, true);
     try {
       await this.api.complete(task.taskListId, task.id);
       await this.refresh();
@@ -242,6 +309,8 @@ export class AppController extends EventTarget {
         taskListId: task.taskListId,
         createdAt: Date.now(),
       });
+    } finally {
+      this.setInFlight(task.id, false);
     }
   }
 
@@ -255,6 +324,7 @@ export class AppController extends EventTarget {
    */
   async snoozeTask(task: Task, due: string): Promise<void> {
     const prev = this.updateTaskLocal(task.id, { due });
+    this.setInFlight(task.id, true);
     try {
       await this.api.patchDue(task.taskListId, task.id, due);
       await this.refresh();
@@ -267,6 +337,8 @@ export class AppController extends EventTarget {
         due,
         createdAt: Date.now(),
       });
+    } finally {
+      this.setInFlight(task.id, false);
     }
   }
 
@@ -501,6 +573,7 @@ export class AppController extends EventTarget {
       localPatch.taskListTitle = destTitle ?? '';
     }
     const prev = this.updateTaskLocal(original.id, localPatch);
+    this.setInFlight(original.id, true);
 
     try {
       // 1. Patch the scalar fields (title/notes and a date being SET) together.
@@ -537,6 +610,8 @@ export class AppController extends EventTarget {
       if (prev) this.revertTasks(prev);
       this.showToast('Could not save changes. Try again.');
       throw err;
+    } finally {
+      this.setInFlight(original.id, false);
     }
   }
 
@@ -582,8 +657,11 @@ export class AppController extends EventTarget {
     }
     const offline = typeof navigator !== 'undefined' && !navigator.onLine;
     if (offline) {
-      // Keep the optimistic change; queue the mutation for later drain.
+      // Keep the optimistic change; queue the mutation for later drain and mark
+      // the task as pending so the list shows a per-item "syncing" indicator.
       await enqueueMutation(mutation);
+      this.queuedIds.add(mutation.taskId);
+      this.syncPending();
       this.showToast('Offline — change queued.');
       return;
     }
@@ -653,12 +731,20 @@ export class AppController extends EventTarget {
     try {
       await drainQueue(this.api as TasksApi);
     } catch (err) {
-      if (err instanceof SilentRenewFailedError) {
+      // A GENUINE auth failure (expired session / 401) means the token really is
+      // dead — surface re-auth. A plain network error is NOT an auth error (the
+      // connection may still be flaky); leave the queue intact for a later retry.
+      if (isAuthError(err)) {
+        await this.reloadQueuedIds();
         this.patch({ screen: 'connect', connectError: false });
         return;
       }
-      // Leave remaining mutations queued; a later online/refresh retries them.
+      await this.reloadQueuedIds();
+      return;
     }
+    // Queue fully drained; refresh from Google (which re-derives the pending set)
+    // and clear the offline indicator (already cleared above via offline:false).
+    await this.reloadQueuedIds();
     await this.refresh();
   }
 
