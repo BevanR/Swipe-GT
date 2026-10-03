@@ -21,3 +21,24 @@ export const GOOGLE_CLIENT_ID: string =
  * Google Tasks. We deliberately request nothing else.
  */
 export const OAUTH_SCOPE = 'https://www.googleapis.com/auth/tasks';
+
+/**
+ * How the app obtains OAuth access tokens:
+ *
+ *  - `'gis'`    (default): the browser-only Google Identity Services token flow,
+ *               with no backend and no client secret. This is what the GitHub
+ *               Pages build and all existing tests use. Access tokens are short-
+ *               lived and silently renewed (≈ weekly interactive re-auth).
+ *  - `'broker'`: a same-origin Cloudflare Worker backend brokers a Google
+ *               authorization-code flow with a stored refresh token, so login is
+ *               permanent. `connect()` full-page-redirects to `/auth/login` and
+ *               `getValidAccessToken()` fetches `/api/token`.
+ *
+ * Selected at build time via `VITE_AUTH_MODE`. Anything other than `'broker'`
+ * (including unset) means `'gis'`, so nothing changes for the current deployment.
+ * The Cloudflare build sets `VITE_AUTH_MODE=broker`.
+ */
+export type AuthMode = 'gis' | 'broker';
+
+export const AUTH_MODE: AuthMode =
+  import.meta.env.VITE_AUTH_MODE === 'broker' ? 'broker' : 'gis';

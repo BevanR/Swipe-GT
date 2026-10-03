@@ -1,4 +1,5 @@
-import { AuthClient, SilentRenewFailedError } from '../auth/authClient';
+import { SilentRenewFailedError } from '../auth/authClient';
+import { createAuthClient } from '../auth/createAuthClient';
 import { TasksApi } from '../api/tasksApi';
 import {
   getConfig,
@@ -22,6 +23,11 @@ export interface AuthLike {
   connect(): Promise<unknown>;
   getValidAccessToken(): Promise<string>;
   isConnected(): Promise<boolean>;
+  /**
+   * Optional log-out hook. Broker mode uses it to delete the server session and
+   * clear local auth; GIS mode has none (the controller just clears local auth).
+   */
+  disconnect?(): Promise<void>;
 }
 
 /** Minimal API surface the controller needs — lets tests inject a fake. */
@@ -109,10 +115,9 @@ export class AppController extends EventTarget {
 
   constructor(opts?: { auth?: AuthLike; api?: ApiLike; theme?: ThemeName }) {
     super();
-    const authClient = opts?.auth ?? new AuthClient();
+    const authClient = opts?.auth ?? createAuthClient();
     this.auth = authClient;
-    this.api =
-      opts?.api ?? new TasksApi(() => (authClient as AuthClient).getValidAccessToken());
+    this.api = opts?.api ?? new TasksApi(() => authClient.getValidAccessToken());
     this._state = initialState(opts?.theme ?? 'tasks');
   }
 
@@ -166,7 +171,16 @@ export class AppController extends EventTarget {
 
   /** Disconnect: clear auth and return to the connect screen. */
   async disconnect(): Promise<void> {
+    // Always clear local auth. In broker mode also run the client's disconnect
+    // (delete the server session + hint cookie); any failure there is non-fatal.
     await setConfig({ auth: null });
+    if (this.auth.disconnect) {
+      try {
+        await this.auth.disconnect();
+      } catch {
+        /* best-effort logout; local state is already cleared */
+      }
+    }
     this.inFlight.clear();
     this.queuedIds.clear();
     this.patch({
