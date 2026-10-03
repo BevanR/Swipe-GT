@@ -37,6 +37,16 @@ This doc is the durable handoff for humans and future agents. Keep it current.
   - Google Cloud project: `bevanrs-g-tasks-alt-ui`.
 - Authorized JS origins on the OAuth client: `https://bevanr.github.io` and `http://localhost:5173`.
 - Silent-refresh only (~weekly interactive re-auth). No refresh token.
+- **Permanent login (optional, Cloudflare Worker backend).** A single-origin
+  Cloudflare Worker can serve the built PWA **and** broker a Google
+  authorization-code flow (offline access + PKCE), holding the refresh token
+  server-side so login is permanent. The code is built but **not deployed**; the
+  default build is unchanged (`VITE_AUTH_MODE` unset = `gis`). Worker code lives in
+  `worker/`; the SPA broker client is `src/auth/brokerAuthClient.ts` (behind the
+  existing `authClient` abstraction, flag-gated by `VITE_AUTH_MODE=broker`).
+  **See `docs/backend.md`** for the architecture and the full deploy/setup
+  checklist (Google **Web** OAuth client, redirect URI `<worker>/auth/callback`,
+  KV namespace id, the two Cloudflare secrets, and flipping to broker mode).
 
 ## Architecture
 
@@ -141,4 +151,5 @@ Open decisions the user may revisit: "No date" on a Someday-list task keeps it i
 - The smoke check exercises the logged-out connect path only (no real Google login in CI). Real-task rendering is confirmed by manual use with a test-user account.
 - **Playwright keyboard-nav e2e** (`scripts/e2e-keyboard.mjs`, `npm run test:e2e` / `test:e2e:build`): boots the built app in a **logged-in** state with **mocked Google Tasks data** — it seeds the persisted OAuth record in IndexedDB so `AuthClient` returns a token without GIS, intercepts `https://tasks.googleapis.com/*` via `page.route` with fixtures, and blocks the service worker for determinism — then drives real key presses. It asserts selection movement; routing (`e`/`Enter`/`r` → edit, `p`/`d`/`s` → Postpone route, `c`/`x` → complete, `1`/`2`/`3` → views, `?` → help); Escape-on-edit → list; title-focus-on-edit; and the Postpone-route arrows/Enter don't leak to the edit screen.
 - **Playwright offline-first e2e** (`scripts/e2e-offline.mjs`): boots the built app logged-in (same seeding as the keyboard harness), then simulates the real offline condition — overriding `navigator.onLine` and aborting every `tasks.googleapis.com` request from the Node side (the app shell + SW stay served from localhost) — to assert (a) an offline COLD LOAD with an **expired** token renders the cached list + Offline indicator instead of the Connect screen (the reported bug; verified to fail on the pre-fix code), (b) an offline snooze enqueues and its card shows the syncing indicator, and (c) reconnect drains the queue and clears the indicator. Expected offline network-abort console noise is filtered; every other console error is still a hard failure.
-- This closed the prior gap where keyboard behavior was never exercised (Lit can't mount in vitest/jsdom; smoke only covered the logged-out path). **The gate is now tsc + vitest (319 tests) + `smoke:build` + `test:e2e:build` (keyboard + offline e2e).**
+- This closed the prior gap where keyboard behavior was never exercised (Lit can't mount in vitest/jsdom; smoke only covered the logged-out path). **The gate is now tsc + vitest (360 tests) + `smoke:build` + `test:e2e:build` (keyboard + offline e2e).**
+- **Worker auth-broker tests** (`worker/*.test.ts`, Node env, Google token endpoint mocked via `fetch`): PKCE/state in the auth URL, code exchange, `/api/token` cached-vs-refresh, 401 on missing/invalid session and refresh rejection, cookie sign/verify + tamper rejection, state-mismatch + logout. Plus `src/auth/brokerAuthClient.test.ts` for the SPA broker client (incl. offline-first reuse). `npx tsc --noEmit` type-checks `worker/` too (root tsconfig includes it; `@cloudflare/workers-types` is a devDep).
