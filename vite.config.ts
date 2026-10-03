@@ -92,7 +92,7 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./test/setup.ts'],
-    include: ['src/**/*.test.ts', 'test/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'test/**/*.test.ts', 'worker/**/*.test.ts'],
     coverage: {
       reporter: ['text', 'html'],
       reportsDirectory: './coverage',

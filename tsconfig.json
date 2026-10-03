@@ -34,5 +34,5 @@
 
     "types": ["vitest/globals", "google.accounts"]
   },
-  "include": ["src", "test"]
+  "include": ["src", "test", "worker"]
 }

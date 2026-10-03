@@ -1,0 +1,52 @@
+{
+  // Cloudflare Worker config for Swipe GT's single-origin deployment: this one
+  // Worker serves the built PWA (Vite `dist/`) AND the auth-broker API.
+  //
+  // Nothing secret lives here. The two SECRETS are set out-of-band and never
+  // committed:
+  //   npx wrangler secret put GOOGLE_CLIENT_SECRET
+  //   npx wrangler secret put COOKIE_SIGNING_KEY
+  // (See docs/backend.md for the full setup checklist, including how to generate
+  // COOKIE_SIGNING_KEY and the deploy-then-register-then-set-secrets order.)
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "swipe-gt",
+  "main": "worker/index.ts",
+  // Pin to a recent date so the Workers runtime behaviour is stable.
+  "compatibility_date": "2026-10-03",
+
+  // Serve the built SPA from `dist/`. `run_worker_first` sends the API + auth
+  // routes to the Worker first; every other request is an asset, and
+  // `not_found_handling: single-page-application` returns index.html for any
+  // non-asset path (the app uses hash routing).
+  "assets": {
+    "directory": "./dist/",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/auth/*"]
+  },
+
+  // Session store: opaque session id -> { refreshToken, accessToken, ... }.
+  // TODO: create the namespace and paste its id here:
+  //   npx wrangler kv namespace create SESSIONS
+  // then copy the printed `id` into the "id" field below.
+  "kv_namespaces": [
+    {
+      "binding": "SESSIONS",
+      "id": "TODO_PUT_YOUR_KV_NAMESPACE_ID_HERE"
+    }
+  ],
+
+  // Non-secret configuration.
+  "vars": {
+    // TODO: your Google OAuth 2.0 **Web application** client id
+    // (ends with `.apps.googleusercontent.com`). NOT the GitHub Pages / GIS one
+    // unless that client is also of type "Web application".
+    "GOOGLE_CLIENT_ID": "TODO_PUT_YOUR_WEB_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+    // The single scope this app needs (read/write Google Tasks).
+    "OAUTH_SCOPE": "https://www.googleapis.com/auth/tasks",
+    // Leave empty to derive the origin (and the OAuth redirect URI) from each
+    // request — correct for the single-origin deployment. Set it only if you
+    // front the Worker with a different public origin.
+    "APP_ORIGIN": ""
+  }
+}
