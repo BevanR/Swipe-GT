@@ -188,6 +188,59 @@ stay logged in thereafter.
 | `npx wrangler deploy` | deploy the Worker + assets |
 | `npx wrangler tail` | live-tail logs (debugging) |
 
+## CI / auto-deploy
+
+The `.github/workflows/deploy-worker.yml` workflow runs the full Quick Loop test
+gate on every push and PR, and on a **green gate on `main`** it builds the SPA in
+broker mode (`VITE_AUTH_MODE=broker npm run build`) and runs `wrangler deploy`
+against the committed `wrangler.jsonc`. It does not touch the existing GitHub Pages
+workflow (`deploy.yml`), which stays live until Cloudflare is verified.
+
+### Two required GitHub repo secrets
+
+Set these in **GitHub → Settings → Secrets and variables → Actions → Secrets**:
+
+| Secret | Value | Where to get it |
+|---|---|---|
+| `CLOUDFLARE_API_TOKEN` | A scoped Cloudflare API token | Cloudflare dashboard → **My Profile → API Tokens → Create Token → "Edit Cloudflare Workers" template**. Grants the Workers Scripts + KV + Workers Routes permissions the deploy needs. |
+| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account id | Cloudflare dashboard → **Workers & Pages** (the Account ID is shown in the right-hand sidebar; also in the URL). |
+
+These are the **only** things CI needs to deploy. Nothing else is passed to the
+action.
+
+### Not managed by CI (set these yourself, once)
+
+- **Worker runtime secrets** — `GOOGLE_CLIENT_SECRET` and `COOKIE_SIGNING_KEY` are
+  set out-of-band via `npx wrangler secret put <NAME>` (or the Cloudflare dashboard
+  → Worker → Settings → Variables and Secrets). The workflow deliberately does
+  **not** push these; they persist on the Worker across deploys.
+- **`wrangler.jsonc` must already be real** — before the first auto-deploy,
+  `kv_namespaces[0].id` must hold the real KV namespace id (from
+  `wrangler kv namespace create SESSIONS`) and `vars.GOOGLE_CLIENT_ID` must hold the
+  real Web OAuth client id. These are committed config, not CI secrets.
+
+### Do NOT also enable Cloudflare Workers Builds
+
+Do **not** connect the repo via Cloudflare's **Workers Builds** git integration.
+This workflow is the single deploy path; enabling Workers Builds too would
+double-deploy (both the git integration and this Action would deploy on every push
+to `main`).
+
+### Later: a second `production` env
+
+The Quick Loop two-env goal (a `main`/preview Worker and a `production` Worker) is
+**not** built yet. To add it later:
+
+1. In `wrangler.jsonc` add a named `env.production` block (its own `name`, KV
+   namespace id, vars) — see Wrangler "Environments".
+2. Add a `deploy-production` job gated on `if: github.ref ==
+   'refs/heads/production'` that runs `cloudflare/wrangler-action@v4` with
+   `command: deploy --env production`.
+3. Set the production Worker's runtime secrets with
+   `wrangler secret put <NAME> --env production`.
+
+Keep it to the one `main` → preview Worker for now.
+
 ## Google verification caveat (important)
 
 While the Google OAuth app is in **Testing** publishing status, refresh tokens

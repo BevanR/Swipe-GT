@@ -1,0 +1,104 @@
+name: Deploy Cloudflare Worker
+
+# Quick Loop gate + auto-deploy for the single-origin Cloudflare Worker
+# (auth broker + dist/ static assets, configured by the committed wrangler.jsonc).
+#
+#   gate   - runs on every push (any branch) and on pull_request. Full test gate:
+#            tsc, vitest, headless smoke, headless e2e. Must be green.
+#   deploy - runs ONLY on push to `main`, after a green gate (`needs: gate`).
+#            Builds the SPA in broker mode, then `wrangler deploy`.
+#
+# This is additive: the GitHub Pages workflow (deploy.yml) stays live and is
+# retired separately once the Cloudflare deploy is verified.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# Minimal token: the jobs only read the repo. The deploy authenticates to
+# Cloudflare with the CLOUDFLARE_API_TOKEN secret, not the GITHUB_TOKEN.
+permissions:
+  contents: read
+
+jobs:
+  # ---- Quick Loop gate: tests must pass (runs on push AND pull_request) -------
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npx vitest run
+
+      # Browser used by the headless smoke + e2e harnesses (Playwright Chromium).
+      # Same step the Pages workflow (deploy.yml) uses so the gate matches CI.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Smoke test built site
+        run: npm run smoke:build
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+
+      - name: End-to-end tests (keyboard + offline)
+        run: npm run test:e2e:build
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+
+  # ---- Deploy the Worker: push to main only, never on a red gate -------------
+  deploy:
+    needs: gate
+    # Push to main only. Never on pull_request, never on other branches.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    # Serialize deploys to main so two pushes can't race the same Worker.
+    concurrency:
+      group: deploy-worker-main
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Bake broker mode into the bundle, then build dist/. wrangler deploy
+      # (below) does NOT rebuild — it only uploads this dist/ as static assets
+      # per wrangler.jsonc, so the broker-mode bundle is what ships.
+      - name: Build SPA (broker mode)
+        run: npm run build
+        env:
+          VITE_AUTH_MODE: broker
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+
+      # Deploy the Worker + dist/ assets against the committed wrangler.jsonc.
+      # Only the deploy credentials are passed here; the Worker RUNTIME secrets
+      # (GOOGLE_CLIENT_SECRET / COOKIE_SIGNING_KEY) are set out-of-band by the
+      # user via `wrangler secret put` and are NOT managed by this workflow.
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+          wranglerVersion: '4'
